@@ -137,7 +137,7 @@ async def get_category_trend(
         text("""
         SELECT date, total_stars, repo_count, stars_gained_week, momentum_score, radar_status
         FROM trend_snapshots
-        WHERE category_id = :cid AND date >= CURRENT_DATE - :days
+        WHERE category_id = :cid AND date >= CURRENT_DATE - CAST(:days AS INTEGER)
         ORDER BY date ASC
         """),
         {"cid": cat_dict["id"], "days": days},
