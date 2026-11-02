@@ -11,9 +11,9 @@ const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/this-week", label: "This Week" },
   { href: "/trends", label: "Trends", also: ["/radar"] },
-  { href: "/repositories", label: "Repos", also: ["/languages", "/repos/"] },
-  { href: "/compare", label: "Compare" },
-  { href: "/watchlist", label: "Watchlist" },
+  { href: "/repositories", label: "Repos", also: ["/languages", "/repos/", "/compare"] },
+  { href: "/breakouts", label: "Breakouts" },
+  { href: "/for-you", label: "For You", also: ["/watchlist"] },
 ];
 
 type Theme = "dusk" | "paper";

@@ -12,6 +12,13 @@ interface ChartProps {
   format?: (v: number) => string;
 }
 
+/** An annotated point on a chart: a release, or a star milestone being crossed. */
+export interface ChartMarker {
+  index: number;
+  label: string;
+  kind: "release" | "milestone";
+}
+
 const fmtDefault = (v: number) => formatStat(Math.round(v));
 
 /** Index of the point nearest the pointer, given the plot's horizontal span. */
@@ -22,20 +29,27 @@ function nearestIndex(e: React.MouseEvent<SVGSVGElement>, n: number, w: number, 
   return Math.max(0, Math.min(n - 1, Math.round(t * (n - 1))));
 }
 
-function ReadOut({ label, value }: { label?: string; value: string }) {
+function ReadOut({ label, value, note }: { label?: string; value: string; note?: string }) {
   return (
     <div className="chartread">
+      {note && <em>{note}</em>}
       {label && <span>{label}</span>}
       <b>{value}</b>
     </div>
   );
 }
 
-export function AreaChart({ values, labels, format = fmtDefault }: ChartProps) {
+export function AreaChart({
+  values,
+  labels,
+  format = fmtDefault,
+  markers = [],
+  height = 220,
+}: ChartProps & { markers?: ChartMarker[]; height?: number }) {
   const gid = useId();
   const [hover, setHover] = useState<number | null>(null);
   const w = 560;
-  const h = 220;
+  const h = height;
   const pad = 8;
   const mx = Math.max(...values);
   const mn = Math.min(...values);
@@ -45,16 +59,26 @@ export function AreaChart({ values, labels, format = fmtDefault }: ChartProps) {
   const line = values.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
   const area = `${line} L${X(values.length - 1).toFixed(1)} ${h} L${X(0).toFixed(1)} ${h} Z`;
   const shown = hover ?? values.length - 1;
+  // Snap the read-out to a marker within 1 point of the pointer so they're easy to hit.
+  const near = hover === null ? [] : markers.filter((m) => Math.abs(m.index - hover) <= 1);
+  const note = near.map((m) => m.label).join(" · ") || undefined;
 
   return (
     <div className="chartwrap">
-      <ReadOut label={labels?.[shown]} value={format(values[shown])} />
+      <ReadOut label={labels?.[shown]} value={format(values[shown])} note={note} />
       <svg
         viewBox={`0 0 ${w} ${h}`}
         style={{ width: "100%", height: "auto" }}
         onMouseMove={(e) => setHover(nearestIndex(e, values.length, w, pad))}
         onMouseLeave={() => setHover(null)}
       >
+        {markers.map((m, i) => (
+          <g key={i} className={`cmark ${m.kind}`}>
+            <line x1={X(m.index)} x2={X(m.index)} y1={14} y2={h} />
+            <circle cx={X(m.index)} cy={10} r={m.kind === "release" ? 4 : 3.5} />
+            <title>{m.label}</title>
+          </g>
+        ))}
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="var(--ember)" stopOpacity="0.38" />

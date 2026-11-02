@@ -23,19 +23,29 @@ A Bloomberg terminal for open source. It ingests trending GitHub repositories ev
 - **README badge** `/badge/<id>` serves an SVG momentum badge; each repository page has a button that copies the Markdown.
 - **Hype vs substance signal** Every repository is flagged as backed by activity or star driven, so a spike that is real contributor and commit growth is distinguished from one that is only stars. Large star jumps with almost no fork, contributor or commit growth are flagged as an unusual star spike.
 - **Data freshness** Each view shows when its underlying data was last synced, so you always know how current the numbers are.
+- **Breakout calls** Each refresh flags small repositories (under 5k stars, under a year old) whose stars this week run at least 2.5× their own weekly average. Every call is dated and scored: it comes true if the repo reaches the weekly top 25 within 30 days, and the hit rate is public.
+- **Lifecycle stage** Every repository is labelled breakout, emerging, established or fading from its last 7 days of stars against the 3 weeks before.
+- **Star check** For the fastest-starred repositories, the 100 most recent stargazers are sampled (one GraphQL call each) to see how many accounts are brand new or empty, a common sign of bought stars.
+- **What shipped** Recent GitHub releases for the top and watched repositories, marked on the star chart and listed on the repository page, This Week and the digest.
+- **Ask the data** Plain-English questions ("fastest-growing Rust databases", "new AI agents under 2k stars") become a validated filter over tracked repositories. A small Groq model reads the question, with a keyword parser as fallback and a daily cap; the model never writes SQL.
+- **For You** Follow categories and languages (stored in the browser) for a personal feed alongside your watchlist and its latest releases.
+- **Share images** Repository and category links unfurl with a generated image showing the star curve and momentum.
 - **Weekly digest** A scheduled recap of the week's breakouts and top movers, delivered to email (Resend), Slack, and Discord. Every channel is optional and independently configured.
 
 ### App Sections
 
-- **Dashboard** The big story, leaderboards, category momentum grid, new entrants, and AI ecosystem feed.
-- **This Week** An editorial weekly recap: biggest movers, new entrants, and categories heating up or cooling down.
+- **Dashboard** A front page: an Ask box, the week's lead story with its star curve and AI write-up, the Hottest Today column, three runner-up stories, open breakout calls, what shipped, the category grid and the AI ecosystem feed.
+- **This Week** The weekly email as a page (same data): big story, breakouts, top movers, what shipped, new breakout calls, and categories heating up or cooling down.
+- **Breakouts** Every breakout call with its outcome and the running hit rate.
+- **Ask** Results for a plain-English question, with a read-back of how it was understood.
+- **For You** Followed categories and languages plus your watchlist.
 - **Trends** Category rankings with momentum and week over week change.
 - **Category detail** Momentum over time, radar status, and the top repositories in a category.
 - **Radar** Polar momentum chart plus rising, stable, and declining rails, a second view under the Trends tab.
 - **Languages** Momentum ranked by programming language, reached from the Repositories page.
 - **Repositories** The full index with sort, language filter, and pagination.
-- **Repository detail** Metrics, star growth and velocity charts, and the AI analyst panel.
-- **Compare** Head to head analysis for two to four repositories.
+- **Repository detail** A large star chart with release and milestone markers, velocity and momentum charts, the score breakdown, star check, recent releases, the AI analyst panel, and an action bar (watch, compare, GitHub) that stays on screen.
+- **Compare** Head to head analysis for two to four repositories, opened from a repository's "Compare with…" button.
 - **Watchlist** Your saved repositories plus background alerts.
 - **Search** The header Search button and Ctrl or Cmd + K open the command palette; `/search` has the full results page with a language filter.
 

@@ -5,11 +5,13 @@ import { useEffect, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getRepository, getRepositoryMetrics, getSimilarRepos } from "@/lib/api";
 import { addRecentRepo } from "@/lib/recent";
-import type { DailyMetric, MomentumBreakdown } from "@/lib/types";
+import type { DailyMetric, MomentumBreakdown, RepoDetail, StarQuality } from "@/lib/types";
 import { formatStat, formatDelta, getLanguageColor, relativeTime } from "@/lib/utils";
 import { parseCompetitors } from "@/lib/chart";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { AreaChart, BarChart, shortDate } from "@/components/shared/Charts";
+import { LifecycleChip } from "@/components/shared/Signals";
+import { milestoneMarkers, releaseMarkers } from "@/lib/markers";
 
 type Range = "30d" | "90d";
 
@@ -61,6 +63,7 @@ export function RepoDetailClient({ id }: { id: number }) {
   const competitors = parseCompetitors(insight?.competitors);
 
   const starsSeries = daily.map((d) => d.stars_total);
+  const markers = [...releaseMarkers(daily, repo.releases ?? []), ...milestoneMarkers(daily)];
   const dayLabels = daily.map((d) => shortDate(d.date));
   const gainedDays = daily.slice(-30);
 
@@ -110,6 +113,7 @@ export function RepoDetailClient({ id }: { id: number }) {
           {repo.license && <span>{repo.license}</span>}
           {repo.github_created_at && <span>◇ Created {new Date(repo.github_created_at).getFullYear()}</span>}
           {repo.last_synced_at && <span>↻ Synced {relativeTime(repo.last_synced_at)}</span>}
+          <LifecycleChip stage={repo.lifecycle} />
           {repo.categories[0] && (
             <Link className="aitag" href={`/trends/${repo.categories[0].slug}`}>
               {repo.categories[0].name}
@@ -119,29 +123,7 @@ export function RepoDetailClient({ id }: { id: number }) {
             {signal.label}
           </span>
         </div>
-        <div className="ractions">
-          <a className="watchbtn on" href={githubUrl} target="_blank" rel="noopener noreferrer">
-            View on GitHub ↗
-          </a>
-          {repo.homepage_url && (
-            <a className="watchbtn" href={repo.homepage_url} target="_blank" rel="noopener noreferrer">
-              Homepage ↗
-            </a>
-          )}
-          <WatchButton
-            repo={{
-              id: repo.id,
-              full_name: repo.full_name,
-              name: repo.name,
-              language: repo.language,
-              momentum_score: repo.momentum_score,
-              stars_gained_week: repo.stars_gained_week,
-            }}
-          />
-          <Link className="watchbtn" href={`/compare?ids=${repo.id}`}>
-            + Compare
-          </Link>
-        </div>
+        {repo.breakout_call && <CallNote call={repo.breakout_call} />}
         <p className="sigwhy">{signalWhy}</p>
       </div>
 
@@ -152,26 +134,32 @@ export function RepoDetailClient({ id }: { id: number }) {
         <Metric v={String(Math.round(repo.momentum_score))} d="Momentum" chg={`${formatDelta(repo.stars_gained_today)} today`} ember />
       </div>
 
-      <div className="detailgrid">
-        <div>
-          <div className="rangetabs" role="group" aria-label="Chart range">
+      <div className="chartcard herochart">
+        <h4>
+          <span>
+            Stars over time
+            <span className="legend">
+              <i className="release" /> release <i className="milestone" /> milestone
+            </span>
+          </span>
+          <span className="rangetabs" role="group" aria-label="Chart range">
             {(["30d", "90d"] as Range[]).map((r) => (
               <button key={r} className={`chip ${range === r ? "on" : ""}`} onClick={() => setRange(r)}>
                 {r === "30d" ? "30 days" : "90 days"}
               </button>
             ))}
-          </div>
+          </span>
+        </h4>
+        {starsSeries.length > 2 ? (
+          <AreaChart values={starsSeries} labels={dayLabels} markers={markers} height={200} />
+        ) : (
+          <div className="note" style={{ margin: 0 }}>Metrics will appear once daily snapshots accumulate.</div>
+        )}
+      </div>
+
+      <div className="detailgrid">
+        <div>
           <div className="chartcard">
-            <h4>
-              Cumulative stars <span>{daily.length ? `${daily.length} days` : "no data yet"}</span>
-            </h4>
-            {starsSeries.length > 2 ? (
-              <AreaChart values={starsSeries} labels={dayLabels} />
-            ) : (
-              <div className="note" style={{ margin: 0 }}>Metrics will appear once daily snapshots accumulate.</div>
-            )}
-          </div>
-          <div className="chartcard" style={{ marginTop: 22 }}>
             <h4>
               Daily stars gained <span>last {gainedDays.length} days</span>
             </h4>
@@ -198,6 +186,8 @@ export function RepoDetailClient({ id }: { id: number }) {
           {repo.momentum_breakdown && (
             <ScoreBreakdown b={repo.momentum_breakdown} score={repo.momentum_score} />
           )}
+          {repo.star_quality && <StarCheck q={repo.star_quality} />}
+          {(repo.releases?.length ?? 0) > 0 && <Releases repo={repo} />}
         </div>
 
         <div className="insight">
@@ -296,6 +286,31 @@ export function RepoDetailClient({ id }: { id: number }) {
         </>
       )}
 
+      <div className="actbar">
+        <span className="abname">{repo.full_name}</span>
+        <WatchButton
+          repo={{
+            id: repo.id,
+            full_name: repo.full_name,
+            name: repo.name,
+            language: repo.language,
+            momentum_score: repo.momentum_score,
+            stars_gained_week: repo.stars_gained_week,
+          }}
+        />
+        <Link className="watchbtn" href={`/compare?ids=${repo.id}`}>
+          Compare with…
+        </Link>
+        {repo.homepage_url && (
+          <a className="watchbtn hidesm" href={repo.homepage_url} target="_blank" rel="noopener noreferrer">
+            Homepage ↗
+          </a>
+        )}
+        <a className="watchbtn on" href={githubUrl} target="_blank" rel="noopener noreferrer">
+          GitHub ↗
+        </a>
+      </div>
+
       <div className="foot">
         <div className="fb">{repo.full_name}</div>
         <div className="fm">
@@ -346,6 +361,90 @@ function ScoreBreakdown({ b, score }: { b: MomentumBreakdown; score: number }) {
           ? `× ${b.recency_multiplier} new-project bonus = ${Math.round(score)}`
           : `= ${Math.round(score)} momentum`}
       </div>
+    </div>
+  );
+}
+
+/** "We called this" line for repos that were flagged as breakout calls. */
+function CallNote({ call }: { call: NonNullable<RepoDetail["breakout_call"]> }) {
+  const on = shortDate(call.called_on);
+  const text =
+    call.status === "hit"
+      ? `Called as a breakout on ${on} at ${formatStat(call.stars_at_call)} stars. It reached #${call.best_rank} on the weekly list${
+          call.hit_on ? ` on ${shortDate(call.hit_on)}` : ""
+        }.`
+      : call.status === "open"
+        ? `Called as a breakout on ${on} at ${formatStat(call.stars_at_call)} stars. Still open.`
+        : `Called as a breakout on ${on}, but it did not reach the weekly top list in time.`;
+  return (
+    <Link className={`callnote ${call.status}`} href="/breakouts">
+      ◎ {text}
+    </Link>
+  );
+}
+
+const STAR_VERDICT: Record<StarQuality["verdict"], string> = {
+  organic: "Looks organic",
+  mixed: "Mixed signals",
+  suspicious: "Looks inflated",
+};
+
+/** Result of sampling the most recent stargazers (account age and activity). */
+function StarCheck({ q }: { q: StarQuality }) {
+  return (
+    <div className="chartcard" style={{ marginTop: 22 }}>
+      <h4>
+        Star check <span>{relativeTime(q.sampled_at)}</span>
+      </h4>
+      <div className={`starverdict ${q.verdict}`}>{STAR_VERDICT[q.verdict]}</div>
+      <div className="bdrow">
+        <span className="bdl">New accounts</span>
+        <span className="bdbar">
+          <i style={{ width: `${q.pct_new}%` }} />
+        </span>
+        <span className="bdv">{q.pct_new}%</span>
+      </div>
+      <div className="bdrow">
+        <span className="bdl">Empty accounts</span>
+        <span className="bdbar">
+          <i style={{ width: `${q.pct_empty}%` }} />
+        </span>
+        <span className="bdv">{q.pct_empty}%</span>
+      </div>
+      <p className="sigwhy">
+        From the {q.sample_size} most recent stargazers. New means the account was under 30 days old
+        when it starred; empty means no followers and no public repos. Bought stars usually come from
+        accounts like these.
+      </p>
+    </div>
+  );
+}
+
+function Releases({ repo }: { repo: RepoDetail }) {
+  return (
+    <div className="chartcard" style={{ marginTop: 22 }}>
+      <h4>
+        Recent releases <span>{repo.releases!.length}</span>
+      </h4>
+      {repo.releases!.map((r) => (
+        <a
+          key={r.tag}
+          className="relrow"
+          href={r.url ?? `https://github.com/${repo.full_name}/releases`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <span className="reltag">{r.tag}</span>
+          <span className="relbody">
+            {r.name && r.name !== r.tag && <b>{r.name}</b>}
+            {r.snippet && <span>{r.snippet}</span>}
+          </span>
+          <span className="reldate">
+            {shortDate(r.published_at)}
+            {r.prerelease ? " · pre" : ""}
+          </span>
+        </a>
+      ))}
     </div>
   );
 }

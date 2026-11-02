@@ -26,6 +26,34 @@ export interface RepoCard {
   first_seen_at: string;
   verdict?: string | null;
   prev_rank?: number | null;
+  lifecycle?: Lifecycle | null;
+}
+
+export type Lifecycle = "breakout" | "emerging" | "established" | "fading";
+
+export interface Release {
+  tag: string;
+  name: string | null;
+  published_at: string;
+  url: string | null;
+  prerelease: boolean;
+  snippet: string | null;
+}
+
+export interface StarQuality {
+  sampled_at: string;
+  sample_size: number;
+  pct_new: number;
+  pct_empty: number;
+  verdict: "organic" | "mixed" | "suspicious";
+}
+
+export interface RepoBreakoutCall {
+  called_on: string;
+  stars_at_call: number;
+  status: "open" | "hit" | "miss";
+  hit_on: string | null;
+  best_rank: number | null;
 }
 
 export interface DailyMetric {
@@ -73,6 +101,9 @@ export interface RepoDetail extends RepoCard {
   last_synced_at: string | null;
   latest_insight: Insight | null;
   momentum_breakdown?: MomentumBreakdown | null;
+  star_quality?: StarQuality | null;
+  releases?: Release[];
+  breakout_call?: RepoBreakoutCall | null;
 }
 
 export interface MomentumBreakdown {
@@ -161,4 +192,77 @@ export interface PaginatedRepos {
   page: number;
   pages: number;
   limit: number;
+}
+
+// ─── Breakout calls ──────────────────────────────────────────────────────────
+
+export interface BreakoutCall {
+  id: number;
+  full_name: string;
+  description: string | null;
+  language: string | null;
+  called_on: string;
+  stars_at_call: number;
+  gain7_at_call: number;
+  accel: number;
+  latest_stars: number;
+  stars_gained_week: number;
+  momentum_score: number;
+  status: "open" | "hit" | "miss";
+  hit_on: string | null;
+  best_rank: number | null;
+  lead_days: number | null;
+}
+
+export interface CallRecord {
+  total: number;
+  hits: number;
+  misses: number;
+  open: number;
+  hit_rate: number | null;
+  avg_lead_days: number | null;
+  hit_rank: number;
+  window_days: number;
+}
+
+export interface CallsResponse {
+  calls: BreakoutCall[];
+  record: CallRecord;
+}
+
+// ─── Digest (This Week) ──────────────────────────────────────────────────────
+
+export interface DigestRepo {
+  id: number;
+  full_name: string;
+  description: string | null;
+  language: string | null;
+  category: string | null;
+  latest_stars: number;
+  stars_gained_today: number;
+  stars_gained_week: number;
+  momentum_score: number;
+  github_created_at: string | null;
+  backed_by_activity: boolean;
+}
+
+export interface ShippedRelease extends Release {
+  id: number;
+  full_name: string;
+}
+
+export interface DigestData {
+  breakouts: DigestRepo[];
+  movers: DigestRepo[];
+  shipped: ShippedRelease[];
+}
+
+// ─── Ask ─────────────────────────────────────────────────────────────────────
+
+export interface AskResult {
+  question: string;
+  understood: string;
+  parsed_by: "ai" | "keywords";
+  repos: RepoCard[];
+  took_ms: number;
 }

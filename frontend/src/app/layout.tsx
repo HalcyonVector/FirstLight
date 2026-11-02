@@ -30,7 +30,14 @@ const jetbrains = JetBrains_Mono({
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:2326"),
+  // Absolute base for share-image URLs. Vercel provides the production domain
+  // when NEXT_PUBLIC_SITE_URL isn't set.
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:2326")
+  ),
   title: {
     default: "GitHub Trending Intelligence",
     template: "%s · GitHub Trending Intelligence",
