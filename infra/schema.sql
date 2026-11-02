@@ -206,7 +206,9 @@ CREATE INDEX idx_repos_fts           ON repositories USING GIN(
 CREATE INDEX idx_repos_trgm_name     ON repositories USING GIN(name gin_trgm_ops);
 
 -- Daily metrics
-CREATE INDEX idx_daily_repo_date     ON daily_metrics(repository_id, date DESC);
+-- (repository_id, date) lookups use the UNIQUE (repository_id, date) index above.
+-- Newer tables and columns live in backend/app/core/schema_upgrade.py and are
+-- created automatically by the refresh pipeline and on API startup.
 CREATE INDEX idx_daily_date          ON daily_metrics(date DESC);
 CREATE INDEX idx_daily_stars_gained  ON daily_metrics(stars_gained DESC, date DESC);
 

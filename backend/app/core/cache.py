@@ -45,6 +45,21 @@ async def cache_set(key: str, value: Any, ttl: int) -> None:
         _disable(e)
 
 
+async def cache_incr(key: str, ttl: int) -> int | None:
+    """Increment a counter (expiring ttl seconds after creation). None without Redis."""
+    if _redis_disabled:
+        return None
+    try:
+        r = get_redis()
+        value = await r.incr(key)
+        if value == 1:
+            await r.expire(key, ttl)
+        return int(value)
+    except Exception as e:
+        _disable(e)
+        return None
+
+
 async def cache_delete(key: str) -> None:
     if _redis_disabled:
         return

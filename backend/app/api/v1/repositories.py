@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.cache import cache_get, cache_set
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.repository import InsightReport, Repository
+from app.models.repository import InsightReport, Repository, RepositoryCategory
 from app.schemas.repository import PaginatedRepos, RepoDetail, RepoMetricsResponse
 from app.services.trend_service import momentum_breakdown
 
@@ -109,8 +109,9 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Repository)
         .options(
-            selectinload(Repository.categories),
-            selectinload(Repository.insights),
+            # Load each link's category too: async sessions can't lazy-load,
+            # so touching rc.category later would raise MissingGreenlet (a 500).
+            selectinload(Repository.categories).selectinload(RepositoryCategory.category),
         )
         .where(Repository.id == repo_id)
     )
@@ -196,6 +197,7 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
         ],
         "latest_insight": _format_insight(latest_insight) if latest_insight else None,
         "momentum_breakdown": breakdown,
+        **await _enrichment(db, repo_id),
     }
 
     await cache_set(cache_key, data, settings.CACHE_TTL_REPO_DETAIL)
@@ -289,6 +291,58 @@ async def get_similar(repo_id: int, db: AsyncSession = Depends(get_db)):
         d["categories"] = []
         items.append(d)
     return {"similar": items}
+
+
+async def _enrichment(db: AsyncSession, repo_id: int) -> dict:
+    """Lifecycle, stargazer sample, releases and breakout call (pipeline-made tables)."""
+    try:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT r.lifecycle,
+                           q.sampled_at, q.sample_size, q.pct_new, q.pct_empty, q.verdict,
+                           c.called_on, c.stars_at_call, c.hit_on, c.best_rank
+                    FROM repositories r
+                    LEFT JOIN star_quality q ON q.repository_id = r.id
+                    LEFT JOIN breakout_calls c ON c.repository_id = r.id
+                    WHERE r.id = :rid
+                    """
+                ),
+                {"rid": repo_id},
+            )
+        ).fetchone()
+        releases = (
+            await db.execute(
+                text(
+                    """
+                    SELECT tag, name, published_at, url, prerelease, snippet
+                    FROM repo_releases WHERE repository_id = :rid
+                    ORDER BY published_at DESC LIMIT 8
+                    """
+                ),
+                {"rid": repo_id},
+            )
+        ).fetchall()
+    except Exception:  # noqa: BLE001 -- tables not created yet
+        await db.rollback()
+        return {}
+
+    out: dict = {"lifecycle": row.lifecycle if row else None,
+                 "releases": [dict(r._mapping) for r in releases]}
+    if row and row.sampled_at:
+        out["star_quality"] = {
+            "sampled_at": row.sampled_at, "sample_size": row.sample_size,
+            "pct_new": row.pct_new, "pct_empty": row.pct_empty, "verdict": row.verdict,
+        }
+    if row and row.called_on:
+        age = (datetime.now(timezone.utc).date() - row.called_on).days
+        status = "hit" if row.hit_on else ("miss" if age > settings.CALL_WINDOW_DAYS else "open")
+        out["breakout_call"] = {
+            "called_on": row.called_on, "stars_at_call": row.stars_at_call,
+            "status": status, "hit_on": row.hit_on, "best_rank": row.best_rank,
+        }
+    return out
 
 
 def _format_insight(insight) -> dict:

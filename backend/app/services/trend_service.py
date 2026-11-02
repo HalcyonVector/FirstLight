@@ -93,6 +93,74 @@ def compute_momentum_score(
     return round(min(raw * b["recency_multiplier"], 100.0), 2)
 
 
+LIFECYCLE_STAGES = ("breakout", "emerging", "established", "fading")
+
+
+def classify_lifecycle(
+    gain7: int, prior_weekly_avg: float | None, age_days: int, total_stars: int,
+) -> str:
+    """
+    Where a repo sits on its growth curve, from the last 7 days of stars versus
+    the weekly average of the 3 weeks before. prior_weekly_avg is None when
+    there isn't enough history to compare against.
+    """
+    if prior_weekly_avg is not None:
+        if gain7 >= max(200, 1.5 * prior_weekly_avg):
+            return "breakout"
+        if prior_weekly_avg >= 20 and gain7 <= 0.5 * prior_weekly_avg:
+            return "fading"
+    if age_days < 180 or total_stars < 2000:
+        return "emerging"
+    return "established"
+
+
+# Breakout calls: small repos whose star rate has jumped well above their own
+# baseline. Tuned so a handful qualify per week, not hundreds.
+CALL_MAX_STARS = 5000
+CALL_MAX_AGE_DAYS = 365
+CALL_MIN_GAIN7 = 150
+CALL_MIN_ACCEL = 2.5
+
+
+def acceleration(gain7: int, prior_weekly_avg: float) -> float:
+    """This week's stars as a multiple of the prior weekly average (floored at 10)."""
+    return gain7 / max(prior_weekly_avg, 10.0)
+
+
+def is_breakout_candidate(
+    gain7: int, prior_weekly_avg: float | None, age_days: int, total_stars: int,
+) -> bool:
+    return (
+        prior_weekly_avg is not None
+        and total_stars < CALL_MAX_STARS
+        and age_days <= CALL_MAX_AGE_DAYS
+        and gain7 >= CALL_MIN_GAIN7
+        and acceleration(gain7, prior_weekly_avg) >= CALL_MIN_ACCEL
+    )
+
+
+def summarize_stargazers(sample: list[dict]) -> dict | None:
+    """
+    Judge a sample of recent stargazers. Each item has "account_age_days" (age
+    of the account when it starred), "followers" and "repos". Farmed stars
+    tend to come from brand-new or completely empty accounts.
+    """
+    if not sample:
+        return None
+    n = len(sample)
+    new = sum(1 for s in sample if s["account_age_days"] < 30)
+    empty = sum(1 for s in sample if s["followers"] == 0 and s["repos"] == 0)
+    pct_new = round(100 * new / n)
+    pct_empty = round(100 * empty / n)
+    if pct_new >= 40 or pct_empty >= 50:
+        verdict = "suspicious"
+    elif pct_new >= 20 or pct_empty >= 30:
+        verdict = "mixed"
+    else:
+        verdict = "organic"
+    return {"sample_size": n, "pct_new": pct_new, "pct_empty": pct_empty, "verdict": verdict}
+
+
 def classify_radar_status(score: float, prev_score: float | None) -> str:
     """Classify into rising / stable / declining based on score and trend."""
     if prev_score is None:

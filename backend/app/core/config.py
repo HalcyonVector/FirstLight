@@ -89,6 +89,28 @@ class Settings(BaseSettings):
     BREAKOUT_MIN_MOMENTUM: float = 30.0
     DIGEST_TOP_N: int = 10
 
+    # Breakout calls: predictions made before a repo reaches the weekly top list
+    CALLS_PER_WEEK: int = 10              # most new calls in one Monday-Sunday week
+    CALL_HIT_RANK: int = 25               # a call "comes true" on reaching this weekly rank...
+    CALL_WINDOW_DAYS: int = 30            # ...within this many days
+
+    # Enrichment (GitHub API budget per 6-hourly run; Actions token allows 1,000/hr)
+    RELEASES_TOP_N: int = 60              # top repos by momentum to fetch releases for (+ watched)
+    RELEASES_MAX_REPOS: int = 100
+    STAR_SAMPLE_TOP_N: int = 20           # GraphQL stargazer samples per run (~1 point each)
+    STAR_SAMPLE_MIN_WEEK: int = 300       # only sample repos gaining at least this many stars/week
+    STAR_SAMPLE_EVERY_DAYS: int = 3
+
+    # Retention for tables that would otherwise grow forever (Supabase 500MB)
+    RELEASE_RETENTION_DAYS: int = 180
+    INSIGHT_RETENTION_DAYS: int = 30      # older insights are pruned, except each repo's newest
+
+    # "Ask the data": natural-language question -> structured filter.
+    # A small model keeps this on its own Groq free quota (separate per model),
+    # away from the 70B model the insights use.
+    ASK_MODEL: str = "llama-3.1-8b-instant"
+    ASK_DAILY_LIMIT: int = 300            # LLM-parsed questions per day; beyond this, keyword parsing only
+
 
 @lru_cache
 def get_settings() -> Settings:

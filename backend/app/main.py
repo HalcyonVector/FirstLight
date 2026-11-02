@@ -1,16 +1,25 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from app.api.v1 import analytics, dashboard, push, repositories, search, trends
+from app.api.v1 import analytics, dashboard, push, repositories, search, signals, trends
 from app.core.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup: make sure newer tables exist even before the next pipeline run.
+    # Best-effort -- a cold database must not stop the API from booting.
+    from app.core.database import AsyncSessionLocal
+    from app.core.schema_upgrade import ensure_schema
+    try:
+        async with AsyncSessionLocal() as session:
+            await ensure_schema(session)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("Schema upgrade skipped: %s", exc)
     yield
     # Shutdown — close GitHub HTTP client
     from app.services.github_service import github_service
@@ -47,6 +56,7 @@ app.include_router(trends.router, prefix=f"{PREFIX}/trends", tags=["Trends"])
 app.include_router(search.router, prefix=f"{PREFIX}/search", tags=["Search"])
 app.include_router(push.router, prefix=f"{PREFIX}/push", tags=["Push"])
 app.include_router(analytics.router, prefix=f"{PREFIX}/analytics", tags=["Analytics"])
+app.include_router(signals.router, prefix=PREFIX, tags=["Signals"])
 
 
 @app.get("/health")

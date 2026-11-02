@@ -38,6 +38,7 @@ class RepoCard(BaseModel):
     first_seen_at: datetime
     verdict: str | None = None
     prev_rank: int | None = None  # rank on yesterday's daily-gain board (dashboard only)
+    lifecycle: str | None = None  # breakout / emerging / established / fading
 
     class Config:
         from_attributes = True
@@ -95,6 +96,31 @@ class MomentumBreakdown(BaseModel):
     week_start: date
 
 
+class StarQuality(BaseModel):
+    sampled_at: datetime
+    sample_size: int
+    pct_new: int
+    pct_empty: int
+    verdict: str
+
+
+class ReleaseOut(BaseModel):
+    tag: str
+    name: str | None = None
+    published_at: datetime
+    url: str | None = None
+    prerelease: bool = False
+    snippet: str | None = None
+
+
+class BreakoutCallOut(BaseModel):
+    called_on: date
+    stars_at_call: int
+    status: str  # open / hit / miss
+    hit_on: date | None = None
+    best_rank: int | None = None
+
+
 class RepoDetail(BaseModel):
     """Full repository page data."""
     id: int
@@ -121,6 +147,10 @@ class RepoDetail(BaseModel):
     categories: list[CategoryOut] = []
     latest_insight: InsightOut | None = None
     momentum_breakdown: MomentumBreakdown | None = None
+    lifecycle: str | None = None
+    star_quality: StarQuality | None = None
+    releases: list[ReleaseOut] = []
+    breakout_call: BreakoutCallOut | None = None
 
     class Config:
         from_attributes = True

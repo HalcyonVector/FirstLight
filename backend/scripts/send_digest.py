@@ -20,63 +20,10 @@ from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import text  # noqa: E402
-
 from app.core.config import settings  # noqa: E402
 from app.core.database import AsyncSessionLocal  # noqa: E402
+from app.services.digest_service import fetch_digest, signal  # noqa: E402
 from app.services.notify_service import any_channel_configured, notify  # noqa: E402
-
-# One query shape for both sections. The LATERAL joins pull the freshest daily
-# metric (commit / contributor activity, for the hype-vs-substance signal) and
-# the primary category, without fanning the row out.
-_SELECT = """
-    SELECT
-        r.id,
-        r.full_name,
-        r.language,
-        r.latest_stars,
-        r.latest_forks,
-        r.stars_gained_today,
-        r.stars_gained_week,
-        r.momentum_score,
-        r.github_created_at,
-        r.description,
-        c.name              AS category,
-        dm.commit_count_week,
-        dm.contributors_count
-    FROM repositories r
-    LEFT JOIN LATERAL (
-        SELECT commit_count_week, contributors_count
-        FROM daily_metrics
-        WHERE repository_id = r.id
-        ORDER BY date DESC
-        LIMIT 1
-    ) dm ON TRUE
-    LEFT JOIN LATERAL (
-        SELECT tc.name
-        FROM repository_categories rc
-        JOIN technology_categories tc ON tc.id = rc.category_id
-        WHERE rc.repository_id = r.id
-        ORDER BY rc.confidence DESC NULLS LAST
-        LIMIT 1
-    ) c ON TRUE
-"""
-
-_MOVERS_SQL = f"""
-    {_SELECT}
-    WHERE r.is_archived = FALSE AND r.momentum_score > 0
-    ORDER BY r.momentum_score DESC
-    LIMIT :n
-"""
-
-_BREAKOUTS_SQL = f"""
-    {_SELECT}
-    WHERE r.is_archived = FALSE
-      AND r.github_created_at >= :cutoff
-      AND r.momentum_score >= :minmom
-    ORDER BY r.momentum_score DESC
-    LIMIT :n
-"""
 
 # -- Email palette: light newsletter; dark variant via prefers-color-scheme --
 BODY = "#f4f5f7"
@@ -99,14 +46,7 @@ def _site() -> str:
     return (settings.FRONTEND_URL or DEFAULT_SITE).rstrip("/")
 
 
-def _signal(m) -> bool:
-    """True when momentum is backed by real dev activity, not just stars.
-    Mirrors the frontend's hype-vs-substance rule."""
-    commit = m["commit_count_week"] or 0
-    contrib = m["contributors_count"] or 0
-    stars = m["latest_stars"] or 0
-    fork_ratio = (m["latest_forks"] or 0) / stars if stars else 0.0
-    return commit > 0 or contrib > 0 or fork_ratio > 0.04
+_signal = signal
 
 
 def _age_days(m) -> Optional[int]:
@@ -149,13 +89,22 @@ def _big_story_line(breakouts, movers) -> Optional[str]:
     )
 
 
-def _text_body(breakouts, movers, date_range: str) -> str:
+def _shipped_lines(shipped) -> list:
+    return [
+        f"- {r._mapping['full_name']} {r._mapping['tag']}  {r._mapping['url'] or ''}".rstrip()
+        for r in shipped
+    ]
+
+
+def _text_body(breakouts, movers, shipped, date_range: str) -> str:
     parts = [f"GitHub Trending -- Weekly Digest ({date_range})", ""]
     story = _big_story_line(breakouts, movers)
     if story:
         parts += [f"* {story}", ""]
     parts += ["Breakouts (new & accelerating)", *_lines(breakouts), ""]
     parts += ["Top movers", *_lines(movers)]
+    if shipped:
+        parts += ["", "What shipped", *_shipped_lines(shipped)]
     parts += ["", f"Full dashboard: {_site()}/this-week"]
     return "\n".join(parts)
 
@@ -254,7 +203,33 @@ def _section(title: str, subtitle: str, rows, is_breakout: bool) -> str:
     {cards}"""
 
 
-def _html_body(breakouts, movers, date_range: str) -> str:
+def _shipped_section(shipped) -> str:
+    if not shipped:
+        return ""
+    items = []
+    for r in shipped:
+        m = r._mapping
+        url = m["url"] or f"https://github.com/{m['full_name']}/releases"
+        snippet = _esc((m["snippet"] or "")[:140])
+        snippet_html = (
+            f'<div class="gti-muted" style="font-family:{SANS};font-size:13px;line-height:19px;color:{MUTED};margin-top:2px;">{snippet}</div>'
+            if snippet else ""
+        )
+        items.append(f"""
+    <tr><td class="gti-rule" style="padding:12px 28px;border-top:1px solid {RULE};">
+      <a href="{url}" class="gti-ink" style="font-family:{SANS};font-size:15px;font-weight:700;color:{INK};text-decoration:none;">{_esc(m["full_name"])}</a>
+      &nbsp;{_pill(_esc(m["tag"]), BLUE, "#e8f0fe")}
+      {snippet_html}
+    </td></tr>""")
+    return f"""
+    <tr><td style="padding:30px 28px 14px;">
+      <div class="gti-ink" style="font-family:{SANS};font-size:20px;font-weight:800;color:{INK};">What shipped</div>
+      <div class="gti-dim" style="font-family:{SANS};font-size:13px;color:{DIM};margin-top:2px;">Releases this week from the repos we track</div>
+    </td></tr>
+    {"".join(items)}"""
+
+
+def _html_body(breakouts, movers, shipped, date_range: str) -> str:
     site = _site()
     story = _big_story_line(breakouts, movers)
     story_block = (
@@ -306,6 +281,7 @@ def _html_body(breakouts, movers, date_range: str) -> str:
         {story_block}
         {_section("Breakouts", "New repos that are accelerating fast", breakouts, True)}
         {_section("Top movers", "Ranked by momentum", movers, False)}
+        {_shipped_section(shipped)}
 
         <tr><td align="center" class="gti-rule" style="padding:28px 28px 8px;border-top:1px solid {RULE};">
           <a href="{site}/this-week" style="display:inline-block;background:{ACCENT};color:#ffffff;font-family:{SANS};font-size:15px;font-weight:700;text-decoration:none;padding:12px 26px;border-radius:8px;">Open the live dashboard</a>
@@ -331,25 +307,16 @@ async def main() -> None:
         return
 
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=settings.BREAKOUT_MAX_AGE_DAYS)
     date_range = f"{(now - timedelta(days=7)):%b %d} - {now:%b %d, %Y}"
 
     async with AsyncSessionLocal() as session:
-        movers = (
-            await session.execute(text(_MOVERS_SQL), {"n": settings.DIGEST_TOP_N})
-        ).fetchall()
-        breakouts = (
-            await session.execute(
-                text(_BREAKOUTS_SQL),
-                {"cutoff": cutoff, "minmom": settings.BREAKOUT_MIN_MOMENTUM, "n": settings.DIGEST_TOP_N},
-            )
-        ).fetchall()
+        breakouts, movers, shipped = await fetch_digest(session)
 
-    text_body = _text_body(breakouts, movers, date_range)
-    html_body = _html_body(breakouts, movers, date_range)
+    text_body = _text_body(breakouts, movers, shipped, date_range)
+    html_body = _html_body(breakouts, movers, shipped, date_range)
 
     await notify("GitHub Trending -- Weekly Digest", text_body, html_body)
-    print(f"Digest sent: {len(breakouts)} breakouts, {len(movers)} movers")
+    print(f"Digest sent: {len(breakouts)} breakouts, {len(movers)} movers, {len(shipped)} releases")
 
 
 if __name__ == "__main__":
