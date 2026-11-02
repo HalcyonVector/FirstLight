@@ -16,9 +16,10 @@ router = APIRouter()
 async def search(
     q: str = Query(..., min_length=2, max_length=200),
     limit: int = Query(20, ge=1, le=50),
+    language: str | None = Query(None, max_length=50),
     db: AsyncSession = Depends(get_db),
 ):
-    cache_key = f"search:{q.lower().strip()}:{limit}"
+    cache_key = f"search:{q.lower().strip()}:{limit}:{language}"
     cached = await cache_get(cache_key)
     if cached:
         return cached
@@ -45,10 +46,12 @@ async def search(
           OR :q_lower = ANY(r.topics)
         )
         AND r.is_archived = FALSE
+        AND (CAST(:language AS TEXT) IS NULL OR r.language = :language)
         ORDER BY rank DESC, r.momentum_score DESC
         LIMIT :limit
         """),
-        {"q": q_clean, "q_like": f"%{q_clean}%", "q_lower": q_clean.lower(), "limit": limit},
+        {"q": q_clean, "q_like": f"%{q_clean}%", "q_lower": q_clean.lower(), "limit": limit,
+         "language": language},
     )
     repo_rows = repos_result.fetchall()
 
@@ -63,8 +66,9 @@ async def search(
           OR :q_lower = ANY(r.topics)
         )
         AND r.is_archived = FALSE
+        AND (CAST(:language AS TEXT) IS NULL OR r.language = :language)
         """),
-        {"q": q_clean, "q_like": f"%{q_clean}%", "q_lower": q_clean.lower()},
+        {"q": q_clean, "q_like": f"%{q_clean}%", "q_lower": q_clean.lower(), "language": language},
     )
     total = count_result.scalar() or 0
 

@@ -190,6 +190,71 @@ class GitHubService:
             logger.error("Failed to fetch language %s: %s", language, e)
             return []
 
+    async def get_recent_releases(self, owner: str, repo: str, n: int = 5) -> list[dict]:
+        """Latest published (non-draft) releases, newest first."""
+        try:
+            data = await self._get(f"/repos/{owner}/{repo}/releases", params={"per_page": n})
+        except Exception as e:
+            logger.warning("Failed to get releases for %s/%s: %s", owner, repo, e)
+            return []
+        out = []
+        for rel in data if isinstance(data, list) else []:
+            if rel.get("draft") or not rel.get("published_at") or not rel.get("tag_name"):
+                continue
+            body = " ".join((rel.get("body") or "").split())
+            out.append({
+                "tag": rel["tag_name"][:200],
+                "name": (rel.get("name") or rel["tag_name"])[:300],
+                "published_at": _parse_dt(rel["published_at"]),
+                "url": rel.get("html_url"),
+                "prerelease": bool(rel.get("prerelease")),
+                "snippet": body[:280] or None,
+            })
+        return out
+
+    _STARGAZERS_QUERY = """
+    query($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        stargazers(last: 100) {
+          edges {
+            starredAt
+            node { createdAt followers { totalCount } repositories { totalCount } }
+          }
+        }
+      }
+    }
+    """
+
+    async def sample_stargazers(self, owner: str, repo: str) -> list[dict]:
+        """
+        The 100 most recent stargazers with their account age at the time they
+        starred. One GraphQL request (~1 point of the 5,000/hr budget).
+        """
+        try:
+            resp = await self.client.post(
+                settings.GITHUB_GRAPHQL_URL,
+                json={"query": self._STARGAZERS_QUERY, "variables": {"owner": owner, "name": repo}},
+            )
+            self._check_rate_limit(resp)
+            resp.raise_for_status()
+            edges = (((resp.json().get("data") or {}).get("repository") or {})
+                     .get("stargazers") or {}).get("edges") or []
+        except Exception as e:
+            logger.warning("Failed to sample stargazers for %s/%s: %s", owner, repo, e)
+            return []
+        sample = []
+        for e in edges:
+            starred, created = _parse_dt(e.get("starredAt")), _parse_dt((e.get("node") or {}).get("createdAt"))
+            if not starred or not created:
+                continue
+            node = e["node"]
+            sample.append({
+                "account_age_days": (starred - created).days,
+                "followers": (node.get("followers") or {}).get("totalCount", 0),
+                "repos": (node.get("repositories") or {}).get("totalCount", 0),
+            })
+        return sample
+
     def parse_repo_data(self, raw: dict) -> dict:
         """Transform GitHub API response to our model fields."""
         owner_data = raw.get("owner", {})

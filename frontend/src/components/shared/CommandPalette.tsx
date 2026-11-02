@@ -17,10 +17,13 @@ const NAV_CMDS = [
   { label: "This Week", href: "/this-week" },
   { label: "Trends", href: "/trends" },
   { label: "Radar", href: "/radar" },
-  { label: "Languages", href: "/languages" },
   { label: "Repositories", href: "/repositories" },
-  { label: "Compare", href: "/compare" },
+  { label: "Languages", href: "/languages" },
+  { label: "Breakout calls", href: "/breakouts" },
+  { label: "For You", href: "/for-you" },
   { label: "Watchlist", href: "/watchlist" },
+  { label: "Compare", href: "/compare" },
+  { label: "Ask the data", href: "/ask" },
   { label: "Search", href: "/search" },
 ];
 
@@ -88,7 +91,21 @@ export function CommandPalette({ open, onClose }: Props) {
           router.push(`/repos/${r.id}`);
         },
       }));
-      return [...repos, ...nav, ...theme];
+      // Anything with a space reads like a question: offer to ask it.
+      const askItem: CmdItem[] = q.trim().includes(" ")
+        ? [
+            {
+              key: "act:ask",
+              label: `Ask: “${q.trim()}”`,
+              sub: "Ask the data",
+              run: () => {
+                onClose();
+                router.push(`/ask?q=${encodeURIComponent(q.trim())}`);
+              },
+            },
+          ]
+        : [];
+      return [...repos, ...askItem, ...nav, ...theme];
     }
 
     const recent = getRecentRepos().map((r) => ({

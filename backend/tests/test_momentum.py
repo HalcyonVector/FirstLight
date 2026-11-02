@@ -51,3 +51,21 @@ def test_score_always_in_range():
             age_days=random.randint(0, 800),
         )
         assert 0.0 <= score <= 100.0
+
+
+def test_breakdown_parts_sum_to_score():
+    from app.services.trend_service import momentum_breakdown
+
+    args = (1200, 80, 6, 40, 10)
+    b = momentum_breakdown(*args, age_days=200)
+    assert b["recency_multiplier"] == 1.0
+    assert round(sum(b["parts"].values()), 2) == compute_momentum_score(*args, age_days=200)
+
+
+def test_star_anomaly_flags_stars_without_activity():
+    from app.services.trend_service import momentum_breakdown
+
+    assert momentum_breakdown(5000, 0, 0, 0, 0, age_days=400)["star_anomaly"] is True
+    assert momentum_breakdown(5000, 300, 20, 80, 0, age_days=400)["star_anomaly"] is False
+    # small repos never trip it
+    assert momentum_breakdown(100, 0, 0, 0, 0, age_days=400)["star_anomaly"] is False

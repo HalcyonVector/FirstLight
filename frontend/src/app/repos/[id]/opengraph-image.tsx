@@ -1,97 +1,68 @@
 import { ImageResponse } from "next/og";
+import { getRepository, getRepositoryMetrics } from "@/lib/api";
+import { formatStat } from "@/lib/utils";
+import { OG, OG_SIZE, OgFrame, ogSpark } from "@/lib/og";
 
 export const runtime = "nodejs";
-export const alt = "GitHub Trending Intelligence — repository";
-export const size = { width: 1200, height: 630 };
+export const alt = "Repository momentum and star growth";
+export const size = OG_SIZE;
 export const contentType = "image/png";
-
-const API = `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1`;
-
-interface RepoLite {
-  full_name: string;
-  name: string;
-  description: string | null;
-  language: string | null;
-  latest_stars: number;
-  stars_gained_week: number;
-  momentum_score: number;
-}
-
-function k(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
+// Data refreshes every 6h; an hour of edge caching keeps renders (and API hits) rare.
+export const revalidate = 3600;
 
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let repo: RepoLite | null = null;
-  try {
-    const res = await fetch(`${API}/repositories/${id}`, { next: { revalidate: 300 } });
-    if (res.ok) repo = (await res.json()) as RepoLite;
-  } catch {
-    repo = null;
+  const [repo, metrics] = await Promise.all([
+    getRepository(Number(id)).catch(() => null),
+    getRepositoryMetrics(Number(id), "30d").catch(() => null),
+  ]);
+
+  if (!repo) {
+    return new ImageResponse(
+      (
+        <OgFrame kicker="Repository">
+          <div style={{ display: "flex", marginTop: 80, fontSize: 64, fontWeight: 800 }}>Repository not found</div>
+        </OgFrame>
+      ),
+      size
+    );
   }
 
-  const bg = "#1c1712";
-  const ember = "#ef9367";
-  const fg = "#efe7d8";
-  const dim = "#b6a893";
-  const dim2 = "#7e6f5c";
+  const spark = ogSpark((metrics?.daily ?? []).map((d) => d.stars_total), 1072, 140);
+  const desc = (repo.description ?? "").slice(0, 90) + ((repo.description?.length ?? 0) > 90 ? "…" : "");
 
   return new ImageResponse(
     (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          background: bg,
-          padding: "70px 76px",
-          fontFamily: "sans-serif",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 14, color: dim, fontSize: 26, letterSpacing: 2 }}>
-          <div style={{ width: 16, height: 16, borderRadius: 8, background: ember }} />
-          GITHUB TRENDING INTELLIGENCE
+      <OgFrame kicker={repo.lifecycle ? `${repo.lifecycle} · ${repo.language ?? "repo"}` : repo.language ?? "Repository"}>
+        <div style={{ display: "flex", flexDirection: "column", marginTop: 34 }}>
+          <div style={{ display: "flex", fontSize: 30, color: OG.dim }}>{repo.owner} /</div>
+          <div style={{ display: "flex", fontSize: 72, fontWeight: 800, lineHeight: 1.05 }}>{repo.name}</div>
+          {desc && <div style={{ display: "flex", fontSize: 28, color: OG.dim, marginTop: 10 }}>{desc}</div>}
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ color: dim2, fontSize: 30 }}>{repo ? repo.full_name.split("/")[0] + " /" : "repository"}</div>
-          <div style={{ color: fg, fontSize: 82, fontWeight: 800, lineHeight: 1.02, marginTop: 4 }}>
-            {repo ? repo.name : "Not found"}
-          </div>
-          <div style={{ color: dim, fontSize: 30, marginTop: 18, maxWidth: 980, lineHeight: 1.35 }}>
-            {repo?.description?.slice(0, 120) ?? "Discover emerging repositories before they go mainstream."}
-          </div>
+        <div style={{ display: "flex", flex: 1, alignItems: "flex-end", marginTop: 16 }}>
+          {spark && (
+            <svg width="1072" height="140" viewBox="0 0 1072 140">
+              <path d={spark.area} fill={OG.ember} fillOpacity="0.18" />
+              <path d={spark.line} fill="none" stroke={OG.ember} strokeWidth="4" />
+            </svg>
+          )}
         </div>
-
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 64 }}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ color: ember, fontSize: 72, fontWeight: 800 }}>{repo ? Math.round(repo.momentum_score) : "—"}</div>
-            <div style={{ color: dim2, fontSize: 24, letterSpacing: 2 }}>MOMENTUM</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ color: "#8fc46b", fontSize: 56, fontWeight: 800 }}>
-              {repo ? `+${k(repo.stars_gained_week)}` : "—"}
-            </div>
-            <div style={{ color: dim2, fontSize: 24, letterSpacing: 2 }}>STARS / WEEK</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ color: fg, fontSize: 56, fontWeight: 800 }}>{repo ? k(repo.latest_stars) : "—"}</div>
-            <div style={{ color: dim2, fontSize: 24, letterSpacing: 2 }}>TOTAL STARS</div>
-          </div>
-          {repo?.language ? (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ color: fg, fontSize: 56, fontWeight: 800 }}>{repo.language}</div>
-              <div style={{ color: dim2, fontSize: 24, letterSpacing: 2 }}>LANGUAGE</div>
-            </div>
-          ) : null}
+        <div style={{ display: "flex", gap: 56, borderTop: `1px solid ${OG.rule}`, paddingTop: 18, marginTop: 8 }}>
+          <Stat v={String(Math.round(repo.momentum_score))} l="momentum" ember />
+          <Stat v={`+${formatStat(repo.stars_gained_week)}`} l="stars this week" />
+          <Stat v={formatStat(repo.latest_stars)} l="total stars" />
         </div>
-      </div>
+      </OgFrame>
     ),
     size
+  );
+}
+
+function Stat({ v, l, ember }: { v: string; l: string; ember?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+      <div style={{ display: "flex", fontSize: 46, fontWeight: 800, color: ember ? OG.ember : OG.fg }}>{v}</div>
+      <div style={{ display: "flex", fontSize: 22, color: OG.dim2 }}>{l}</div>
+    </div>
   );
 }

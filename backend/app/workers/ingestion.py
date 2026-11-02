@@ -507,10 +507,31 @@ async def _generate_ai_insights() -> None:
                     AND ir.report_type = 'repository'
                     AND ir.expires_at > NOW()
               )
+              -- An expired but recent insight is still good enough if momentum
+              -- has barely moved since it was written; spend the call elsewhere.
+              AND NOT EXISTS (
+                  SELECT 1 FROM insight_reports ir
+                  JOIN LATERAL (
+                      SELECT wm.momentum_score
+                      FROM weekly_metrics wm
+                      WHERE wm.repository_id = r.id
+                        AND wm.week_start <= ir.generated_at::date
+                      ORDER BY wm.week_start DESC
+                      LIMIT 1
+                  ) m ON TRUE
+                  WHERE ir.subject_id = r.id
+                    AND ir.report_type = 'repository'
+                    AND ir.generated_at > NOW() - (:max_age * INTERVAL '1 day')
+                    AND ABS(r.momentum_score - m.momentum_score) < :delta
+              )
             ORDER BY r.momentum_score DESC
             LIMIT :limit
             """),
-            {"limit": settings.TOP_REPOS_FOR_INSIGHTS},
+            {
+                "limit": settings.TOP_REPOS_FOR_INSIGHTS,
+                "max_age": settings.INSIGHT_MAX_AGE_DAYS,
+                "delta": settings.INSIGHT_REFRESH_DELTA,
+            },
         )
         rows = result.fetchall()
         logger.info("Generating insights for %d repos", len(rows))

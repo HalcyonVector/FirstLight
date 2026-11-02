@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getCategoryTrend } from "@/lib/api";
 import type { TrendSnapshot } from "@/lib/types";
 import { formatStat, formatDelta } from "@/lib/utils";
 
 export function CategoryDetailClient({ slug }: { slug: string }) {
-  const router = useRouter();
   const { data, isLoading, isError } = useQuery({
     queryKey: ["category-trend", slug],
     queryFn: () => getCategoryTrend(slug, "30d"),
@@ -88,7 +86,7 @@ export function CategoryDetailClient({ slug }: { slug: string }) {
       </div>
       <div>
         {(data.top_repos ?? []).map((r, i) => (
-          <div key={r.id} className="lentry" onClick={() => router.push(`/repos/${r.id}`)}>
+          <Link key={r.id} className="lentry" href={`/repos/${r.id}`}>
             <div className="rk">{i + 1}</div>
             <div>
               <div className="nm">
@@ -101,13 +99,16 @@ export function CategoryDetailClient({ slug }: { slug: string }) {
               <div className="gv">{formatDelta(r.stars_gained_week)}</div>
               <div className="gl">stars/wk · {Math.round(r.momentum_score)}</div>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
       <div className="foot">
         <div className="fb">{data.category.name}</div>
-        <div className="fm">{formatStat(data.top_repos?.length ?? 0)} repositories in category</div>
+        <div className="fm">
+          {formatStat(data.top_repos?.length ?? 0)} repositories in category ·{" "}
+          <a href={`/rss.xml?category=${data.category.slug}`}>RSS feed</a>
+        </div>
       </div>
     </div>
   );

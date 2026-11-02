@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,8 +9,9 @@ from sqlalchemy.orm import selectinload
 from app.core.cache import cache_get, cache_set
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.repository import InsightReport, Repository
+from app.models.repository import InsightReport, Repository, RepositoryCategory
 from app.schemas.repository import PaginatedRepos, RepoDetail, RepoMetricsResponse
+from app.services.trend_service import momentum_breakdown
 
 router = APIRouter()
 
@@ -107,8 +109,9 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Repository)
         .options(
-            selectinload(Repository.categories),
-            selectinload(Repository.insights),
+            # Load each link's category too: async sessions can't lazy-load,
+            # so touching rc.category later would raise MissingGreenlet (a 500).
+            selectinload(Repository.categories).selectinload(RepositoryCategory.category),
         )
         .where(Repository.id == repo_id)
     )
@@ -128,6 +131,37 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
     )
     latest_insight = insight_result.scalar_one_or_none()
 
+    # Latest scored week, broken into the signals that made up the score
+    wk = (
+        await db.execute(
+            text("""
+            SELECT week_start, stars_gained, forks_gained, new_contributors,
+                   commit_activity, issues_opened
+            FROM weekly_metrics
+            WHERE repository_id = :rid
+            ORDER BY week_start DESC
+            LIMIT 1
+            """),
+            {"rid": repo_id},
+        )
+    ).fetchone()
+    breakdown = None
+    if wk:
+        age_days = (
+            (datetime.now(timezone.utc) - repo.github_created_at).days
+            if repo.github_created_at else 365
+        )
+        b = momentum_breakdown(
+            wk.stars_gained or 0, wk.forks_gained or 0, wk.new_contributors or 0,
+            wk.commit_activity or 0, wk.issues_opened or 0, age_days,
+        )
+        breakdown = {
+            "parts": {k: round(v, 1) for k, v in b["parts"].items()},
+            "recency_multiplier": b["recency_multiplier"],
+            "star_anomaly": b["star_anomaly"],
+            "week_start": wk.week_start,
+        }
+
     data = {
         "id": repo.id,
         "github_id": repo.github_id,
@@ -139,12 +173,12 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
         "license": repo.license,
         "topics": repo.topics or [],
         "homepage_url": repo.homepage_url,
-        "is_archived": repo.is_archived,
-        "is_fork": repo.is_fork,
-        "latest_stars": repo.latest_stars,
-        "latest_forks": repo.latest_forks,
-        "stars_gained_today": repo.stars_gained_today,
-        "stars_gained_week": repo.stars_gained_week,
+        "is_archived": bool(repo.is_archived),
+        "is_fork": bool(repo.is_fork),
+        "latest_stars": repo.latest_stars or 0,
+        "latest_forks": repo.latest_forks or 0,
+        "stars_gained_today": repo.stars_gained_today or 0,
+        "stars_gained_week": repo.stars_gained_week or 0,
         "momentum_score": float(repo.momentum_score or 0),
         "github_created_at": repo.github_created_at,
         "github_pushed_at": repo.github_pushed_at,
@@ -162,6 +196,8 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
             if rc.category
         ],
         "latest_insight": _format_insight(latest_insight) if latest_insight else None,
+        "momentum_breakdown": breakdown,
+        **await _enrichment(db, repo_id),
     }
 
     await cache_set(cache_key, data, settings.CACHE_TTL_REPO_DETAIL)
@@ -178,11 +214,15 @@ async def get_repository_metrics(
 
     daily_result = await db.execute(
         text("""
-        SELECT date, stars_total, forks_total, stars_gained, forks_gained,
-               open_issues, contributors_count, commit_count_week
+        SELECT date, stars_total, forks_total,
+               COALESCE(stars_gained, 0) AS stars_gained,
+               COALESCE(forks_gained, 0) AS forks_gained,
+               COALESCE(open_issues, 0) AS open_issues,
+               COALESCE(contributors_count, 0) AS contributors_count,
+               COALESCE(commit_count_week, 0) AS commit_count_week
         FROM daily_metrics
         WHERE repository_id = :rid
-          AND date >= CURRENT_DATE - :days
+          AND date >= CURRENT_DATE - CAST(:days AS INTEGER)
         ORDER BY date ASC
         """),
         {"rid": repo_id, "days": days},
@@ -191,11 +231,15 @@ async def get_repository_metrics(
 
     weekly_result = await db.execute(
         text("""
-        SELECT week_start, stars_gained, forks_gained, new_contributors,
-               commit_activity, momentum_score
+        SELECT week_start,
+               COALESCE(stars_gained, 0) AS stars_gained,
+               COALESCE(forks_gained, 0) AS forks_gained,
+               COALESCE(new_contributors, 0) AS new_contributors,
+               COALESCE(commit_activity, 0) AS commit_activity,
+               momentum_score
         FROM weekly_metrics
         WHERE repository_id = :rid
-          AND week_start >= CURRENT_DATE - :days
+          AND week_start >= CURRENT_DATE - CAST(:days AS INTEGER)
         ORDER BY week_start ASC
         """),
         {"rid": repo_id, "days": days},
@@ -249,6 +293,58 @@ async def get_similar(repo_id: int, db: AsyncSession = Depends(get_db)):
     return {"similar": items}
 
 
+async def _enrichment(db: AsyncSession, repo_id: int) -> dict:
+    """Lifecycle, stargazer sample, releases and breakout call (pipeline-made tables)."""
+    try:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT r.lifecycle,
+                           q.sampled_at, q.sample_size, q.pct_new, q.pct_empty, q.verdict,
+                           c.called_on, c.stars_at_call, c.hit_on, c.best_rank
+                    FROM repositories r
+                    LEFT JOIN star_quality q ON q.repository_id = r.id
+                    LEFT JOIN breakout_calls c ON c.repository_id = r.id
+                    WHERE r.id = :rid
+                    """
+                ),
+                {"rid": repo_id},
+            )
+        ).fetchone()
+        releases = (
+            await db.execute(
+                text(
+                    """
+                    SELECT tag, name, published_at, url, prerelease, snippet
+                    FROM repo_releases WHERE repository_id = :rid
+                    ORDER BY published_at DESC LIMIT 8
+                    """
+                ),
+                {"rid": repo_id},
+            )
+        ).fetchall()
+    except Exception:  # noqa: BLE001 -- tables not created yet
+        await db.rollback()
+        return {}
+
+    out: dict = {"lifecycle": row.lifecycle if row else None,
+                 "releases": [dict(r._mapping) for r in releases]}
+    if row and row.sampled_at:
+        out["star_quality"] = {
+            "sampled_at": row.sampled_at, "sample_size": row.sample_size,
+            "pct_new": row.pct_new, "pct_empty": row.pct_empty, "verdict": row.verdict,
+        }
+    if row and row.called_on:
+        age = (datetime.now(timezone.utc).date() - row.called_on).days
+        status = "hit" if row.hit_on else ("miss" if age > settings.CALL_WINDOW_DAYS else "open")
+        out["breakout_call"] = {
+            "called_on": row.called_on, "stars_at_call": row.stars_at_call,
+            "status": status, "hit_on": row.hit_on, "best_rank": row.best_rank,
+        }
+    return out
+
+
 def _format_insight(insight) -> dict:
     return {
         "id": insight.id,
@@ -261,5 +357,6 @@ def _format_insight(insight) -> dict:
         "verdict": insight.verdict,
         "competitors": insight.competitors,
         "tags": insight.tags or [],
-        "generated_at": insight.generated_at,
+        "model_used": insight.model_used,
+        "generated_at": insight.generated_at or insight.created_at,
     }

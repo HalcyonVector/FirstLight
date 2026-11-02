@@ -62,6 +62,34 @@ export function toggleWatch(item: Omit<WatchItem, "baseline_momentum" | "watched
   return true;
 }
 
+/**
+ * Merge items from an exported file into the watchlist (existing entries win).
+ * Returns how many were added; throws on anything that isn't a watchlist export.
+ */
+export function importWatchlist(raw: unknown): number {
+  const incoming = Array.isArray(raw) ? raw : (raw as { items?: unknown })?.items;
+  if (!Array.isArray(incoming)) throw new Error("Not a watchlist file");
+  const list = readWatchlist();
+  let added = 0;
+  for (const it of incoming as Partial<WatchItem>[]) {
+    if (typeof it?.id !== "number" || typeof it.full_name !== "string") continue;
+    if (list.some((w) => w.id === it.id)) continue;
+    list.push({
+      id: it.id,
+      full_name: it.full_name,
+      name: it.name ?? it.full_name.split("/").pop() ?? it.full_name,
+      language: it.language ?? null,
+      momentum_score: Number(it.momentum_score ?? 0),
+      stars_gained_week: Number(it.stars_gained_week ?? 0),
+      baseline_momentum: Number(it.baseline_momentum ?? it.momentum_score ?? 0),
+      watched_at: it.watched_at ?? new Date().toISOString(),
+    });
+    added++;
+  }
+  writeWatchlist(list);
+  return added;
+}
+
 /** Update the stored momentum snapshot for a watched repo (keeps deltas fresh). */
 export function refreshWatchSnapshot(id: number, momentum: number, gainedWeek: number) {
   const list = readWatchlist();

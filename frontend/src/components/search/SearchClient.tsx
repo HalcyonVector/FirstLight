@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { search as searchApi } from "@/lib/api";
-import type { RepoCard } from "@/lib/types";
+import { search as searchApi, getLanguages } from "@/lib/api";
 import { formatDelta, getLanguageColor } from "@/lib/utils";
-
-const FILTERS = ["All", "Python", "TypeScript", "Go", "Rust", "JavaScript"];
 
 export function SearchClient() {
   const router = useRouter();
@@ -15,7 +13,7 @@ export function SearchClient() {
   const initial = params.get("q") ?? "";
   const [q, setQ] = useState(initial);
   const [debounced, setDebounced] = useState(initial);
-  const [filter, setFilter] = useState("All");
+  const [filter, setFilter] = useState(params.get("language") ?? "All");
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q), 250);
@@ -26,25 +24,36 @@ export function SearchClient() {
   useEffect(() => {
     const sp = new URLSearchParams();
     if (debounced.trim()) sp.set("q", debounced.trim());
+    if (filter !== "All") sp.set("language", filter);
     router.replace(`/search${sp.toString() ? `?${sp}` : ""}`, { scroll: false });
-  }, [debounced, router]);
+  }, [debounced, filter, router]);
 
   const { data, isFetching } = useQuery({
-    queryKey: ["search", debounced],
-    queryFn: () => searchApi(debounced, 20),
+    queryKey: ["search", debounced, filter],
+    queryFn: () => searchApi(debounced, 20, filter === "All" ? undefined : filter),
     enabled: debounced.trim().length >= 2,
     staleTime: 30_000,
   });
 
-  const results = useMemo(() => {
-    let repos: RepoCard[] = data?.repos ?? [];
-    if (filter !== "All") repos = repos.filter((r) => r.language === filter);
-    return repos;
-  }, [data, filter]);
+  const results = data?.repos ?? [];
+
+  const { data: langData } = useQuery({
+    queryKey: ["languages"],
+    queryFn: getLanguages,
+    staleTime: 10 * 60_000,
+  });
+  const FILTERS = [
+    "All",
+    ...[...(langData?.languages ?? [])]
+      .sort((a, b) => b.repo_count - a.repo_count)
+      .slice(0, 8)
+      .map((l) => l.language),
+  ];
+  if (!FILTERS.includes(filter)) FILTERS.push(filter);
 
   return (
     <div className="fade-up">
-      <div className="kicker">Full-text · PostgreSQL FTS</div>
+      <div className="kicker">Search every tracked repository</div>
       <h1 className="big">
         Find it before it <span className="ember">trends.</span>
       </h1>
@@ -61,9 +70,9 @@ export function SearchClient() {
 
       <div className="filters">
         {FILTERS.map((f) => (
-          <span key={f} className={`chip ${filter === f ? "on" : ""}`} onClick={() => setFilter(f)}>
+          <button key={f} className={`chip ${filter === f ? "on" : ""}`} onClick={() => setFilter(f)}>
             {f}
-          </span>
+          </button>
         ))}
       </div>
 
@@ -72,7 +81,7 @@ export function SearchClient() {
           <div className="note">Type at least two characters to search across every tracked repository.</div>
         ) : results.length ? (
           results.map((r) => (
-            <div key={r.id} className="sresult" onClick={() => router.push(`/repos/${r.id}`)}>
+            <Link key={r.id} className="sresult" href={`/repos/${r.id}`}>
               <span className="langdot" style={{ background: getLanguageColor(r.language) }} />
               <div>
                 <div className="sn">{r.full_name}</div>
@@ -90,7 +99,7 @@ export function SearchClient() {
                 <div className="a">{formatDelta(r.stars_gained_week)}</div>
                 <div className="b">momentum {Math.round(r.momentum_score)}</div>
               </div>
-            </div>
+            </Link>
           ))
         ) : (
           <div className="note">No matches for “{debounced}”.</div>
@@ -105,8 +114,8 @@ export function SearchClient() {
       )}
 
       <div className="foot">
-        <div className="fb">Sub-50ms full-text</div>
-        <div className="fm">GIN index · to_tsvector(name + description)</div>
+        <div className="fb">Search</div>
+        <div className="fm">Matches names, descriptions and topics</div>
       </div>
     </div>
   );

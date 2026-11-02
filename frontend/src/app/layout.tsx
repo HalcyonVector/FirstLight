@@ -30,7 +30,14 @@ const jetbrains = JetBrains_Mono({
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:2326"),
+  // Absolute base for share-image URLs. Vercel provides the production domain
+  // when NEXT_PUBLIC_SITE_URL isn't set.
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:2326")
+  ),
   title: {
     default: "GitHub Trending Intelligence",
     template: "%s · GitHub Trending Intelligence",
@@ -42,8 +49,9 @@ export const metadata: Metadata = {
   alternates: { types: { "application/rss+xml": "/rss.xml" } },
 };
 
-// Runs before paint to apply the saved theme and avoid a flash of the default.
-const themeScript = `(function(){try{var t=localStorage.getItem('gti:theme');if(t==='dusk'||t==='paper'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();`;
+// Runs before paint to apply the saved theme (or the OS light/dark setting on a
+// first visit) and avoid a flash of the default.
+const themeScript = `(function(){try{var t=localStorage.getItem('gti:theme');if(t!=='dusk'&&t!=='paper'){t=window.matchMedia('(prefers-color-scheme: light)').matches?'paper':'dusk';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

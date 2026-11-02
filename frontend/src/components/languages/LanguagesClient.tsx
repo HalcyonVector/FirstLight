@@ -1,12 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getLanguages } from "@/lib/api";
 import { formatStat, formatDelta, getLanguageColor } from "@/lib/utils";
 
 export function LanguagesClient() {
-  const router = useRouter();
   const { data, isLoading } = useQuery({
     queryKey: ["languages"],
     queryFn: getLanguages,
@@ -38,10 +37,10 @@ export function LanguagesClient() {
       ) : langs.length ? (
         <div>
           {langs.map((l, i) => (
-            <div
+            <Link
               key={l.language}
               className="trendrow"
-              onClick={() => router.push(`/repositories?language=${encodeURIComponent(l.language)}`)}
+              href={`/repositories?language=${encodeURIComponent(l.language)}`}
             >
               <div className="idx">{String(i + 1).padStart(2, "0")}</div>
               <div>
@@ -79,7 +78,7 @@ export function LanguagesClient() {
                 <div className="v">{Math.round(l.avg_momentum)}</div>
                 <div className="d up">{formatDelta(l.stars_gained_week)} / wk</div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       ) : (

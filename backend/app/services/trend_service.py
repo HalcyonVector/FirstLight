@@ -31,6 +31,47 @@ def normalize_log(value: int, p95: int) -> float:
     return min(math.log1p(value) / math.log1p(p95), 1.0)
 
 
+MOMENTUM_WEIGHTS = {
+    "stars": 0.45,
+    "forks": 0.20,
+    "contributors": 0.20,
+    "commits": 0.10,
+    "issues": 0.05,
+}
+
+# Star-anomaly heuristic: a big weekly star jump with almost no activity behind it.
+ANOMALY_MIN_STARS_WEEK = 500
+ANOMALY_MAX_ACTIVITY = 0.15
+
+
+def momentum_breakdown(
+    stars_gained_week: int,
+    forks_gained: int,
+    new_contributors: int,
+    commit_activity: int,
+    issues_opened: int,
+    age_days: int,
+) -> dict:
+    """
+    Per-signal contribution (in score points, before the recency multiplier)
+    plus the multiplier itself. The parts sum to the raw score.
+    """
+    normalized = {
+        "stars": normalize_log(stars_gained_week, P95_STARS_WEEK),
+        "forks": normalize_log(forks_gained, P95_FORKS_WEEK),
+        "contributors": normalize_log(new_contributors, P95_CONTRIBUTORS),
+        "commits": normalize_log(commit_activity, P95_COMMITS),
+        "issues": normalize_log(issues_opened, P95_ISSUES),
+    }
+    parts = {k: v * MOMENTUM_WEIGHTS[k] * 100 for k, v in normalized.items()}
+    recency = 1.2 if age_days < 30 else (1.1 if age_days < 90 else 1.0)
+
+    activity = (normalized["forks"] + normalized["contributors"] + normalized["commits"]) / 3
+    star_anomaly = stars_gained_week >= ANOMALY_MIN_STARS_WEEK and activity < ANOMALY_MAX_ACTIVITY
+
+    return {"parts": parts, "recency_multiplier": recency, "star_anomaly": star_anomaly}
+
+
 def compute_momentum_score(
     stars_gained_week: int,
     forks_gained: int,
@@ -44,22 +85,80 @@ def compute_momentum_score(
     Star velocity is the dominant signal (~45%).
     Recency bonus for repos < 30 days old.
     """
-    star_v   = normalize_log(stars_gained_week, P95_STARS_WEEK)
-    fork_v   = normalize_log(forks_gained, P95_FORKS_WEEK)
-    contrib_v = normalize_log(new_contributors, P95_CONTRIBUTORS)
-    commit_v  = normalize_log(commit_activity, P95_COMMITS)
-    issue_v   = normalize_log(issues_opened, P95_ISSUES)
+    b = momentum_breakdown(
+        stars_gained_week, forks_gained, new_contributors,
+        commit_activity, issues_opened, age_days,
+    )
+    raw = sum(b["parts"].values())
+    return round(min(raw * b["recency_multiplier"], 100.0), 2)
 
-    raw = (
-        star_v   * 0.45 +
-        fork_v   * 0.20 +
-        contrib_v * 0.20 +
-        commit_v  * 0.10 +
-        issue_v   * 0.05
-    ) * 100
 
-    recency = 1.2 if age_days < 30 else (1.1 if age_days < 90 else 1.0)
-    return round(min(raw * recency, 100.0), 2)
+LIFECYCLE_STAGES = ("breakout", "emerging", "established", "fading")
+
+
+def classify_lifecycle(
+    gain7: int, prior_weekly_avg: float | None, age_days: int, total_stars: int,
+) -> str:
+    """
+    Where a repo sits on its growth curve, from the last 7 days of stars versus
+    the weekly average of the 3 weeks before. prior_weekly_avg is None when
+    there isn't enough history to compare against.
+    """
+    if prior_weekly_avg is not None:
+        if gain7 >= max(200, 1.5 * prior_weekly_avg):
+            return "breakout"
+        if prior_weekly_avg >= 20 and gain7 <= 0.5 * prior_weekly_avg:
+            return "fading"
+    if age_days < 180 or total_stars < 2000:
+        return "emerging"
+    return "established"
+
+
+# Breakout calls: small repos whose star rate has jumped well above their own
+# baseline. Tuned so a handful qualify per week, not hundreds.
+CALL_MAX_STARS = 5000
+CALL_MAX_AGE_DAYS = 365
+CALL_MIN_GAIN7 = 150
+CALL_MIN_ACCEL = 2.5
+
+
+def acceleration(gain7: int, prior_weekly_avg: float) -> float:
+    """This week's stars as a multiple of the prior weekly average (floored at 10)."""
+    return gain7 / max(prior_weekly_avg, 10.0)
+
+
+def is_breakout_candidate(
+    gain7: int, prior_weekly_avg: float | None, age_days: int, total_stars: int,
+) -> bool:
+    return (
+        prior_weekly_avg is not None
+        and total_stars < CALL_MAX_STARS
+        and age_days <= CALL_MAX_AGE_DAYS
+        and gain7 >= CALL_MIN_GAIN7
+        and acceleration(gain7, prior_weekly_avg) >= CALL_MIN_ACCEL
+    )
+
+
+def summarize_stargazers(sample: list[dict]) -> dict | None:
+    """
+    Judge a sample of recent stargazers. Each item has "account_age_days" (age
+    of the account when it starred), "followers" and "repos". Farmed stars
+    tend to come from brand-new or completely empty accounts.
+    """
+    if not sample:
+        return None
+    n = len(sample)
+    new = sum(1 for s in sample if s["account_age_days"] < 30)
+    empty = sum(1 for s in sample if s["followers"] == 0 and s["repos"] == 0)
+    pct_new = round(100 * new / n)
+    pct_empty = round(100 * empty / n)
+    if pct_new >= 40 or pct_empty >= 50:
+        verdict = "suspicious"
+    elif pct_new >= 20 or pct_empty >= 30:
+        verdict = "mixed"
+    else:
+        verdict = "organic"
+    return {"sample_size": n, "pct_new": pct_new, "pct_empty": pct_empty, "verdict": verdict}
 
 
 def classify_radar_status(score: float, prev_score: float | None) -> str:

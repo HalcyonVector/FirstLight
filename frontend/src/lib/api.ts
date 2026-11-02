@@ -1,5 +1,9 @@
 import type {
+  AskResult,
+  CallsResponse,
   CategoryMomentum,
+  DigestData,
+  ShippedRelease,
   CategoryTrendDetail,
   DashboardData,
   PaginatedRepos,
@@ -104,8 +108,8 @@ export const getRadar = (): Promise<RadarData> =>
   fetchJSON<RadarData>("/trends/radar");
 
 // ─── Search ──────────────────────────────────────────────────────────────────
-export const search = (q: string, limit = 20): Promise<SearchResult> =>
-  fetchJSON<SearchResult>("/search", { q, limit });
+export const search = (q: string, limit = 20, language?: string): Promise<SearchResult> =>
+  fetchJSON<SearchResult>("/search", language ? { q, limit, language } : { q, limit });
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 export interface LanguageStat {
@@ -136,3 +140,10 @@ export interface Breakout {
 }
 export const getBreakouts = (): Promise<{ breakouts: Breakout[] }> =>
   fetchJSON<{ breakouts: Breakout[] }>("/analytics/breakouts");
+
+// ─── Signals: breakout calls, releases, digest, ask ────────────────────────────
+export const getCalls = (): Promise<CallsResponse> => fetchJSON<CallsResponse>("/calls");
+export const getReleases = (ids: number[], days = 30): Promise<{ releases: ShippedRelease[] }> =>
+  fetchJSON<{ releases: ShippedRelease[] }>("/releases", { ids: ids.join(","), days });
+export const getDigest = (): Promise<DigestData> => fetchJSON<DigestData>("/digest");
+export const ask = (q: string): Promise<AskResult> => fetchJSON<AskResult>("/ask", { q });
