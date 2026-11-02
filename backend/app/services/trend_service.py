@@ -31,6 +31,47 @@ def normalize_log(value: int, p95: int) -> float:
     return min(math.log1p(value) / math.log1p(p95), 1.0)
 
 
+MOMENTUM_WEIGHTS = {
+    "stars": 0.45,
+    "forks": 0.20,
+    "contributors": 0.20,
+    "commits": 0.10,
+    "issues": 0.05,
+}
+
+# Star-anomaly heuristic: a big weekly star jump with almost no activity behind it.
+ANOMALY_MIN_STARS_WEEK = 500
+ANOMALY_MAX_ACTIVITY = 0.15
+
+
+def momentum_breakdown(
+    stars_gained_week: int,
+    forks_gained: int,
+    new_contributors: int,
+    commit_activity: int,
+    issues_opened: int,
+    age_days: int,
+) -> dict:
+    """
+    Per-signal contribution (in score points, before the recency multiplier)
+    plus the multiplier itself. The parts sum to the raw score.
+    """
+    normalized = {
+        "stars": normalize_log(stars_gained_week, P95_STARS_WEEK),
+        "forks": normalize_log(forks_gained, P95_FORKS_WEEK),
+        "contributors": normalize_log(new_contributors, P95_CONTRIBUTORS),
+        "commits": normalize_log(commit_activity, P95_COMMITS),
+        "issues": normalize_log(issues_opened, P95_ISSUES),
+    }
+    parts = {k: v * MOMENTUM_WEIGHTS[k] * 100 for k, v in normalized.items()}
+    recency = 1.2 if age_days < 30 else (1.1 if age_days < 90 else 1.0)
+
+    activity = (normalized["forks"] + normalized["contributors"] + normalized["commits"]) / 3
+    star_anomaly = stars_gained_week >= ANOMALY_MIN_STARS_WEEK and activity < ANOMALY_MAX_ACTIVITY
+
+    return {"parts": parts, "recency_multiplier": recency, "star_anomaly": star_anomaly}
+
+
 def compute_momentum_score(
     stars_gained_week: int,
     forks_gained: int,
@@ -44,22 +85,12 @@ def compute_momentum_score(
     Star velocity is the dominant signal (~45%).
     Recency bonus for repos < 30 days old.
     """
-    star_v   = normalize_log(stars_gained_week, P95_STARS_WEEK)
-    fork_v   = normalize_log(forks_gained, P95_FORKS_WEEK)
-    contrib_v = normalize_log(new_contributors, P95_CONTRIBUTORS)
-    commit_v  = normalize_log(commit_activity, P95_COMMITS)
-    issue_v   = normalize_log(issues_opened, P95_ISSUES)
-
-    raw = (
-        star_v   * 0.45 +
-        fork_v   * 0.20 +
-        contrib_v * 0.20 +
-        commit_v  * 0.10 +
-        issue_v   * 0.05
-    ) * 100
-
-    recency = 1.2 if age_days < 30 else (1.1 if age_days < 90 else 1.0)
-    return round(min(raw * recency, 100.0), 2)
+    b = momentum_breakdown(
+        stars_gained_week, forks_gained, new_contributors,
+        commit_activity, issues_opened, age_days,
+    )
+    raw = sum(b["parts"].values())
+    return round(min(raw * b["recency_multiplier"], 100.0), 2)
 
 
 def classify_radar_status(score: float, prev_score: float | None) -> str:

@@ -16,7 +16,7 @@ AI_CATEGORY_SLUGS = ["ai-agents", "mcp-servers", "llm-frameworks", "coding-assis
 
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(db: AsyncSession = Depends(get_db)):
-    cache_key = "dashboard:v1"
+    cache_key = "dashboard:v2"
     cached = await cache_get(cache_key)
     if cached:
         return cached
@@ -131,6 +131,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
 
     await _attach_verdicts(db, top_today)
     await _attach_verdicts(db, top_week)
+    await _attach_prev_ranks(db, top_today)
 
     # Data freshness — how much real history we've actually accumulated.
     fresh = (
@@ -162,7 +163,36 @@ def _format_repo_list(rows: list[dict]) -> list[dict]:
         r["topics"] = r.get("topics") or []
         r["categories"] = []
         r.setdefault("verdict", None)
+        r.setdefault("prev_rank", None)
     return rows
+
+
+async def _attach_prev_ranks(db: AsyncSession, rows: list[dict]) -> None:
+    """Attach each repo's rank on the previous day's stars-gained board (for ▲/▼ arrows)."""
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return
+    res = await db.execute(
+        text(
+            """
+            WITH prev AS (
+                SELECT DISTINCT date FROM daily_metrics ORDER BY date DESC OFFSET 1 LIMIT 1
+            )
+            SELECT repository_id, rnk FROM (
+                SELECT dm.repository_id,
+                       RANK() OVER (ORDER BY dm.stars_gained DESC) AS rnk
+                FROM daily_metrics dm
+                JOIN repositories r ON r.id = dm.repository_id AND r.is_archived = FALSE
+                WHERE dm.date = (SELECT date FROM prev)
+            ) ranked
+            WHERE repository_id = ANY(:ids)
+            """
+        ),
+        {"ids": ids},
+    )
+    rmap = {m["repository_id"]: int(m["rnk"]) for m in (row._mapping for row in res.fetchall())}
+    for r in rows:
+        r["prev_rank"] = rmap.get(r["id"])
 
 
 async def _attach_verdicts(db: AsyncSession, rows: list[dict]) -> None:

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,6 +11,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.repository import InsightReport, Repository
 from app.schemas.repository import PaginatedRepos, RepoDetail, RepoMetricsResponse
+from app.services.trend_service import momentum_breakdown
 
 router = APIRouter()
 
@@ -128,6 +130,37 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
     )
     latest_insight = insight_result.scalar_one_or_none()
 
+    # Latest scored week, broken into the signals that made up the score
+    wk = (
+        await db.execute(
+            text("""
+            SELECT week_start, stars_gained, forks_gained, new_contributors,
+                   commit_activity, issues_opened
+            FROM weekly_metrics
+            WHERE repository_id = :rid
+            ORDER BY week_start DESC
+            LIMIT 1
+            """),
+            {"rid": repo_id},
+        )
+    ).fetchone()
+    breakdown = None
+    if wk:
+        age_days = (
+            (datetime.now(timezone.utc) - repo.github_created_at).days
+            if repo.github_created_at else 365
+        )
+        b = momentum_breakdown(
+            wk.stars_gained or 0, wk.forks_gained or 0, wk.new_contributors or 0,
+            wk.commit_activity or 0, wk.issues_opened or 0, age_days,
+        )
+        breakdown = {
+            "parts": {k: round(v, 1) for k, v in b["parts"].items()},
+            "recency_multiplier": b["recency_multiplier"],
+            "star_anomaly": b["star_anomaly"],
+            "week_start": wk.week_start,
+        }
+
     data = {
         "id": repo.id,
         "github_id": repo.github_id,
@@ -139,12 +172,12 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
         "license": repo.license,
         "topics": repo.topics or [],
         "homepage_url": repo.homepage_url,
-        "is_archived": repo.is_archived,
-        "is_fork": repo.is_fork,
-        "latest_stars": repo.latest_stars,
-        "latest_forks": repo.latest_forks,
-        "stars_gained_today": repo.stars_gained_today,
-        "stars_gained_week": repo.stars_gained_week,
+        "is_archived": bool(repo.is_archived),
+        "is_fork": bool(repo.is_fork),
+        "latest_stars": repo.latest_stars or 0,
+        "latest_forks": repo.latest_forks or 0,
+        "stars_gained_today": repo.stars_gained_today or 0,
+        "stars_gained_week": repo.stars_gained_week or 0,
         "momentum_score": float(repo.momentum_score or 0),
         "github_created_at": repo.github_created_at,
         "github_pushed_at": repo.github_pushed_at,
@@ -162,6 +195,7 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
             if rc.category
         ],
         "latest_insight": _format_insight(latest_insight) if latest_insight else None,
+        "momentum_breakdown": breakdown,
     }
 
     await cache_set(cache_key, data, settings.CACHE_TTL_REPO_DETAIL)
@@ -178,11 +212,15 @@ async def get_repository_metrics(
 
     daily_result = await db.execute(
         text("""
-        SELECT date, stars_total, forks_total, stars_gained, forks_gained,
-               open_issues, contributors_count, commit_count_week
+        SELECT date, stars_total, forks_total,
+               COALESCE(stars_gained, 0) AS stars_gained,
+               COALESCE(forks_gained, 0) AS forks_gained,
+               COALESCE(open_issues, 0) AS open_issues,
+               COALESCE(contributors_count, 0) AS contributors_count,
+               COALESCE(commit_count_week, 0) AS commit_count_week
         FROM daily_metrics
         WHERE repository_id = :rid
-          AND date >= CURRENT_DATE - :days
+          AND date >= CURRENT_DATE - CAST(:days AS INTEGER)
         ORDER BY date ASC
         """),
         {"rid": repo_id, "days": days},
@@ -191,11 +229,15 @@ async def get_repository_metrics(
 
     weekly_result = await db.execute(
         text("""
-        SELECT week_start, stars_gained, forks_gained, new_contributors,
-               commit_activity, momentum_score
+        SELECT week_start,
+               COALESCE(stars_gained, 0) AS stars_gained,
+               COALESCE(forks_gained, 0) AS forks_gained,
+               COALESCE(new_contributors, 0) AS new_contributors,
+               COALESCE(commit_activity, 0) AS commit_activity,
+               momentum_score
         FROM weekly_metrics
         WHERE repository_id = :rid
-          AND week_start >= CURRENT_DATE - :days
+          AND week_start >= CURRENT_DATE - CAST(:days AS INTEGER)
         ORDER BY week_start ASC
         """),
         {"rid": repo_id, "days": days},
@@ -261,5 +303,6 @@ def _format_insight(insight) -> dict:
         "verdict": insight.verdict,
         "competitors": insight.competitors,
         "tags": insight.tags or [],
-        "generated_at": insight.generated_at,
+        "model_used": insight.model_used,
+        "generated_at": insight.generated_at or insight.created_at,
     }

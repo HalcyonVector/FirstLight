@@ -37,6 +37,7 @@ class RepoCard(BaseModel):
     github_created_at: datetime | None
     first_seen_at: datetime
     verdict: str | None = None
+    prev_rank: int | None = None  # rank on yesterday's daily-gain board (dashboard only)
 
     class Config:
         from_attributes = True
@@ -79,10 +80,19 @@ class InsightOut(BaseModel):
     verdict: str | None
     competitors: str | None  # JSON string
     tags: list[str] = []
+    model_used: str | None = None
     generated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class MomentumBreakdown(BaseModel):
+    """Points each signal contributes to the score, before the recency multiplier."""
+    parts: dict[str, float]
+    recency_multiplier: float
+    star_anomaly: bool
+    week_start: date
 
 
 class RepoDetail(BaseModel):
@@ -110,6 +120,7 @@ class RepoDetail(BaseModel):
     last_synced_at: datetime | None
     categories: list[CategoryOut] = []
     latest_insight: InsightOut | None = None
+    momentum_breakdown: MomentumBreakdown | None = None
 
     class Config:
         from_attributes = True

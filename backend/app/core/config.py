@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     # Ingestion
     INGEST_BATCH_SIZE: int = 100          # repos per cron run to deep-fetch
     TOP_REPOS_FOR_INSIGHTS: int = 20      # top N repos to generate AI insights for (per run; fills in over cycles)
+    INSIGHT_MAX_AGE_DAYS: int = 7         # an expired insight younger than this is kept...
+    INSIGHT_REFRESH_DELTA: float = 10.0   # ...unless momentum moved by at least this many points
     SIGNALS_TOP_N: int = 200              # repos to fetch contributor/commit velocity for
     SIGNALS_CONCURRENCY: int = 8          # parallel GitHub requests when fetching signals
     DATA_RETENTION_DAYS: int = 90         # prune daily_metrics older than this (Supabase 500MB)
