@@ -1,12 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getDashboard, getRadar } from "@/lib/api";
 import { formatStat, formatDelta } from "@/lib/utils";
 
 export function ThisWeekClient() {
-  const router = useRouter();
   const { data: dash } = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, staleTime: 5 * 60_000 });
   const { data: radar } = useQuery({ queryKey: ["radar"], queryFn: getRadar, staleTime: 5 * 60_000 });
 
@@ -55,7 +54,7 @@ export function ThisWeekClient() {
       </div>
       {movers.length ? (
         movers.map((r, i) => (
-          <div key={r.id} className="lentry" onClick={() => router.push(`/repos/${r.id}`)}>
+          <Link key={r.id} className="lentry" href={`/repos/${r.id}`}>
             <div className="rk">{i + 1}</div>
             <div>
               <div className="nm">
@@ -68,7 +67,7 @@ export function ThisWeekClient() {
               <div className="gv">{formatDelta(r.stars_gained_week)}</div>
               <div className="gl">stars/wk · {Math.round(r.momentum_score)}</div>
             </div>
-          </div>
+          </Link>
         ))
       ) : (
         <div className="note">No movers yet.</div>
@@ -81,11 +80,11 @@ export function ThisWeekClient() {
           </div>
           {newcomers.length ? (
             newcomers.map((r) => (
-              <div key={r.id} className="mini" onClick={() => router.push(`/repos/${r.id}`)}>
+              <Link key={r.id} className="mini" href={`/repos/${r.id}`}>
                 <span className="mn">{r.full_name}</span>
                 <span className="badge-new">new</span>
                 <span className="mg">{formatDelta(r.stars_gained_week)}</span>
-              </div>
+              </Link>
             ))
           ) : (
             <div className="note" style={{ margin: 0 }}>
@@ -99,14 +98,10 @@ export function ThisWeekClient() {
           </div>
           {rising.length ? (
             rising.map((c) => (
-              <div
-                key={c.category.id}
-                className="mini"
-                onClick={() => router.push(`/trends/${c.category.slug}`)}
-              >
+              <Link key={c.category.id} className="mini" href={`/trends/${c.category.slug}`}>
                 <span className="mn">{c.category.name}</span>
                 <span className="mg">{formatDelta(c.change_vs_last_week)}</span>
-              </div>
+              </Link>
             ))
           ) : (
             <div className="note" style={{ margin: 0 }}>
@@ -121,16 +116,12 @@ export function ThisWeekClient() {
       </div>
       {cooling.length ? (
         cooling.map((c) => (
-          <div
-            key={c.category.id}
-            className="mini"
-            onClick={() => router.push(`/trends/${c.category.slug}`)}
-          >
+          <Link key={c.category.id} className="mini" href={`/trends/${c.category.slug}`}>
             <span className="mn">{c.category.name}</span>
             <span className="mg" style={{ color: "var(--loss)" }}>
               {formatDelta(c.change_vs_last_week)}
             </span>
-          </div>
+          </Link>
         ))
       ) : (
         <div className="note">Nothing notably cooling this week.</div>

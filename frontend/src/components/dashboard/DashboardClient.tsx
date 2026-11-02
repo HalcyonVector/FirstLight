@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { getDashboard, getBreakouts, type Breakout } from "@/lib/api";
 import type { CategoryMomentum, DashboardData, RepoCard } from "@/lib/types";
 import { formatStat, formatDelta } from "@/lib/utils";
 import { Sparkline } from "@/components/shared/Sparkline";
+import { WatchButton } from "@/components/shared/WatchButton";
 import { useSparklines } from "@/hooks/useSparklines";
 
 interface Props {
@@ -15,11 +15,6 @@ interface Props {
 }
 
 export function DashboardClient({ initialData }: Props) {
-  const router = useRouter();
-  const [q, setQ] = useState("");
-  const runSearch = () => {
-    if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`);
-  };
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
     queryFn: getDashboard,
@@ -69,16 +64,6 @@ export function DashboardClient({ initialData }: Props) {
 
   return (
     <div className="fade-up">
-      <div className="searchbox dashsearch">
-        <span className="ico">⌕</span>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && runSearch()}
-          placeholder="Search repositories…"
-          aria-label="Search repositories"
-        />
-      </div>
       <div className="kicker">The Big Story · This week</div>
       {leader ? (
         <>
@@ -97,58 +82,37 @@ export function DashboardClient({ initialData }: Props) {
             <div>
               {hasVelocity ? (
                 <p className="drop">
-                  Momentum sharpened this week as{" "}
                   <Link className="inl" href={`/repos/${leader.id}`}>
                     {leader.full_name}
                   </Link>{" "}
-                  added {formatStat(leader.stars_gained_week)} stars in seven days, the steepest
-                  climb among everything tracked. Its {leader.language ?? "polyglot"} core and{" "}
-                  {Math.round(leader.momentum_score)} momentum score put it clear at the top.
+                  added {formatStat(leader.stars_gained_week)} stars in the last seven days, more
+                  than any other tracked repository, for a momentum score of{" "}
+                  {Math.round(leader.momentum_score)}.
+                  {runnerUp && (
+                    <>
+                      {" "}
+                      Next is{" "}
+                      <Link className="inl" href={`/repos/${runnerUp.id}`}>
+                        {runnerUp.full_name}
+                      </Link>{" "}
+                      with {formatDelta(runnerUp.stars_gained_week)}.
+                    </>
+                  )}
                 </p>
               ) : (
                 <p className="drop">
-                  The tracker is indexing {featured.length}+ repositories across {cats.length}{" "}
-                  categories, led by{" "}
+                  Velocity needs two daily snapshots, so until the next refresh the board ranks by
+                  total stars, led by{" "}
                   <Link className="inl" href={`/repos/${leader.id}`}>
                     {leader.full_name}
                   </Link>{" "}
-                  at {formatStat(leader.latest_stars)} stars. Velocity and momentum begin populating
-                  after the next ingest cycle; until then, the board ranks by footprint.
-                </p>
-              )}
-              {runnerUp && (
-                <p>
-                  {hasVelocity ? "Close behind, " : "Also prominent: "}
-                  <Link className="inl" href={`/repos/${runnerUp.id}`}>
-                    {runnerUp.full_name}
-                  </Link>{" "}
-                  {hasVelocity
-                    ? `gained ${formatStat(
-                        runnerUp.stars_gained_week
-                      )}, part of a broader shift where production tooling keeps displacing last year's experiments.`
-                    : `at ${formatStat(
-                        runnerUp.latest_stars
-                      )} stars, among the most starred projects currently indexed.`}
+                  at {formatStat(leader.latest_stars)}.
                 </p>
               )}
               <p>
-                {hasVelocity
-                  ? `Zoom out and the churn is the story. ${formatStat(
-                      totalToday
-                    )} stars changed hands today alone, ${newEntrants.length} projects are brand new this week, and all ${
-                      cats.length
-                    } tracked categories are moving at once, a live read on where developer attention is compounding fastest.`
-                  : `Once a second daily snapshot lands, this same board re-ranks by velocity, surfacing which of these ${featured.length} projects are genuinely accelerating rather than simply large and lifting the fastest climbers to the top automatically.`}
-              </p>
-              <p>
-                {hasVelocity
-                  ? `Each repository opens to the full picture: a 90-day star curve, daily velocity, and an AI-written read on why it's growing, what it solves, and who is using it. The leaderboard is the starting point; the detail pages are where the signal sharpens.`
-                  : `Each repository still opens to its full profile, covering description, language, topics, and total footprint, alongside the metrics that begin driving momentum the moment a second daily snapshot lands.`}
-              </p>
-              <p>
-                Data refreshes every six hours. Categories are inferred from topics and language, and
-                momentum blends star, fork, contributor, and commit velocity into a single score from
-                0 to 100.
+                Momentum is a 0 to 100 score that blends star, fork, contributor and commit growth.
+                Open any repository to see how its score is built, its star curve, and an AI-written
+                analysis.
               </p>
             </div>
             <aside className="side">
@@ -186,7 +150,7 @@ export function DashboardClient({ initialData }: Props) {
       )}
 
       <div className="rulehead">
-        The Leaderboards <span className="meta">by star velocity</span>
+        The Leaderboards <span className="meta">by star velocity · ▲▼ vs yesterday</span>
       </div>
       <div className="cols">
         <div>
@@ -201,6 +165,7 @@ export function DashboardClient({ initialData }: Props) {
               metric={r.stars_gained_today}
               label="today"
               spark={sparks[String(r.id)]}
+              showMove
             />
           ))}
         </div>
@@ -254,31 +219,19 @@ export function DashboardClient({ initialData }: Props) {
         </>
       )}
 
-      <div className="panelrow" style={{ marginTop: 12 }}>
-        <div>
-          <div className="rulehead">
-            New Entrants <span className="meta">first seen &lt; 14d</span>
-          </div>
-          {newEntrants.map((r) => (
-            <div key={r.id} className="mini" onClick={() => router.push(`/repos/${r.id}`)}>
-              <span className="mn">{r.full_name}</span>
-              <span className="badge-new">new</span>
-              <span className="mg">{formatDelta(r.stars_gained_week)}</span>
-            </div>
-          ))}
-        </div>
-        <div>
+      {aiEco.length > 0 && (
+        <>
           <div className="rulehead">
             AI Ecosystem <span className="meta">agents · llm · inference</span>
           </div>
           {aiEco.map((r) => (
-            <div key={r.id} className="mini" onClick={() => router.push(`/repos/${r.id}`)}>
+            <Link key={r.id} className="mini" href={`/repos/${r.id}`}>
               <span className="mn">{r.full_name}</span>
               <span className="mg">{formatDelta(r.stars_gained_week)}</span>
-            </div>
+            </Link>
           ))}
-        </div>
-      </div>
+        </>
+      )}
 
       <div className="foot">
         <div className="fb">
@@ -293,6 +246,8 @@ export function DashboardClient({ initialData }: Props) {
               }${data.snapshot_days < 7 ? " · momentum still stabilizing" : ""}`
             : "Data collecting…"}
           {data?.generated_at ? ` · updated ${new Date(data.generated_at).toLocaleTimeString()}` : ""}
+          {" · "}
+          <Link href="/rss.xml">RSS</Link>
         </div>
       </div>
     </div>
@@ -308,6 +263,14 @@ function Stat({ n, l, ember }: { n: string; l: string; ember?: boolean }) {
   );
 }
 
+/** ▲3 / ▼2 / NEW compared with yesterday's rank on the daily-gain board. */
+function RankMove({ rank, prev }: { rank: number; prev: number | null | undefined }) {
+  if (prev === undefined) return null; // API without rank history
+  if (prev === null) return <span className="move new">new</span>;
+  const d = prev - rank;
+  if (d === 0) return <span className="move">–</span>;
+  return <span className={`move ${d > 0 ? "up" : "dn"}`}>{d > 0 ? `▲${d}` : `▼${-d}`}</span>;
+}
 
 function SideList({
   items,
@@ -318,7 +281,6 @@ function SideList({
   hasVelocity: boolean;
   sparks: Record<string, number[]>;
 }) {
-  const router = useRouter();
   const [page, setPage] = useState(0);
   const perPage = 5;
   const totalPages = Math.max(1, Math.ceil(items.length / perPage));
@@ -350,7 +312,7 @@ function SideList({
       {pageItems.map((r, i) => {
         const rank = clamped * perPage + i + 1;
         return (
-          <div key={r.id} className="row" onClick={() => router.push(`/repos/${r.id}`)}>
+          <Link key={r.id} className="row" href={`/repos/${r.id}`}>
             <span className="n">{String(rank).padStart(2, "0")}</span>
             <div className="body">
               <div className="t">{r.name}</div>
@@ -371,7 +333,7 @@ function SideList({
                 <Sparkline values={sparks[String(r.id)]} color="var(--ember)" />
               )}
             </span>
-          </div>
+          </Link>
         );
       })}
     </>
@@ -384,17 +346,21 @@ function LeaderEntry({
   metric,
   label,
   spark,
+  showMove,
 }: {
   rank: number;
   repo: RepoCard;
   metric: number;
   label: string;
   spark?: number[];
+  showMove?: boolean;
 }) {
-  const router = useRouter();
   return (
-    <div className="lentry" onClick={() => router.push(`/repos/${repo.id}`)}>
-      <div className="rk">{rank}</div>
+    <Link className="lentry" href={`/repos/${repo.id}`}>
+      <div className="rk">
+        {rank}
+        {showMove && <RankMove rank={rank} prev={repo.prev_rank} />}
+      </div>
       <div>
         <div className="nm">
           {repo.name}
@@ -402,25 +368,37 @@ function LeaderEntry({
         </div>
         <div className="ds">{repo.verdict ?? repo.description ?? "No description provided."}</div>
       </div>
-      <div className="rt">
-        {spark && spark.length > 1 && (
-          <div style={{ marginBottom: 4 }}>
-            <Sparkline values={spark} width={72} height={20} color="var(--gain)" />
+      <div className="rt rtwatch">
+        <div>
+          {spark && spark.length > 1 && (
+            <div style={{ marginBottom: 4 }}>
+              <Sparkline values={spark} width={72} height={20} color="var(--gain)" />
+            </div>
+          )}
+          <div className="gv" style={metric ? undefined : { color: "var(--dim2)" }}>
+            {metric ? formatDelta(metric) : "—"}
           </div>
-        )}
-        <div className="gv" style={metric ? undefined : { color: "var(--dim2)" }}>
-          {metric ? formatDelta(metric) : "—"}
+          <div className="gl">stars/{label}</div>
         </div>
-        <div className="gl">stars/{label}</div>
+        <WatchButton
+          variant="icon"
+          repo={{
+            id: repo.id,
+            full_name: repo.full_name,
+            name: repo.name,
+            language: repo.language,
+            momentum_score: repo.momentum_score,
+            stars_gained_week: repo.stars_gained_week,
+          }}
+        />
       </div>
-    </div>
+    </Link>
   );
 }
 
 function BreakoutEntry({ rank, b }: { rank: number; b: Breakout }) {
-  const router = useRouter();
   return (
-    <div className="lentry" onClick={() => router.push(`/repos/${b.id}`)}>
+    <Link className="lentry" href={`/repos/${b.id}`}>
       <div className="rk">{rank}</div>
       <div>
         <div className="nm">
@@ -436,15 +414,14 @@ function BreakoutEntry({ rank, b }: { rank: number; b: Breakout }) {
         </div>
         <div className="gl">momentum</div>
       </div>
-    </div>
+    </Link>
   );
 }
 
 function CategoryCard({ c }: { c: CategoryMomentum }) {
-  const router = useRouter();
   const status = (c.radar_status ?? "stable") as "rising" | "stable" | "declining";
   return (
-    <div className="cat" onClick={() => router.push(`/trends/${c.category.slug}`)}>
+    <Link className="cat" href={`/trends/${c.category.slug}`}>
       <div className="cn">{c.category.name}</div>
       <div className="cs">
         <span className={`pill ${status}`}>{status}</span>
@@ -457,7 +434,7 @@ function CategoryCard({ c }: { c: CategoryMomentum }) {
       <div className="bar">
         <i style={{ width: `${Math.min(100, Math.round(c.momentum_score))}%` }} />
       </div>
-    </div>
+    </Link>
   );
 }
 

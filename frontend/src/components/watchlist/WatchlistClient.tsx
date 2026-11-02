@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueries } from "@tanstack/react-query";
 import { getRepository } from "@/lib/api";
 import { useWatchlist } from "@/hooks/useWatchlist";
-import { getAlertThreshold, setAlertThreshold, refreshWatchSnapshot } from "@/lib/watchlist";
+import {
+  addToWatchlist,
+  getAlertThreshold,
+  importWatchlist,
+  readWatchlist,
+  refreshWatchSnapshot,
+  setAlertThreshold,
+} from "@/lib/watchlist";
 import { enablePush, disablePush, syncPush, isPushEnabled, pushSupported } from "@/lib/push";
 import { formatDelta } from "@/lib/utils";
 
@@ -16,8 +24,74 @@ export function WatchlistClient() {
   const [threshold, setThreshold] = useState(80);
   const [push, setPush] = useState<PushState>("unknown");
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const params = useSearchParams();
+  const router = useRouter();
 
   const ids = items.map((w) => w.id);
+
+  // A shared link (/watchlist?add=1,2,3) adds those repos, then tidies the URL.
+  useEffect(() => {
+    const add = (params.get("add") ?? "")
+      .split(",")
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0)
+      .slice(0, 50);
+    if (!add.length) return;
+    Promise.allSettled(add.map((id) => getRepository(id))).then((res) => {
+      let n = 0;
+      res.forEach((r) => {
+        if (r.status !== "fulfilled") return;
+        const repo = r.value;
+        if (readWatchlist().some((w) => w.id === repo.id)) return;
+        addToWatchlist({
+          id: repo.id,
+          full_name: repo.full_name,
+          name: repo.name,
+          language: repo.language,
+          momentum_score: repo.momentum_score,
+          stars_gained_week: repo.stars_gained_week,
+        });
+        n++;
+      });
+      setMsg(`Added ${n} repositor${n === 1 ? "y" : "ies"} from the shared link.`);
+      router.replace("/watchlist", { scroll: false });
+    });
+  }, [params, router]);
+
+  function exportFile() {
+    const blob = new Blob([JSON.stringify({ version: 1, items: readWatchlist() }, null, 2)], {
+      type: "application/json",
+    });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gti-watchlist.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function importFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const n = importWatchlist(JSON.parse(await file.text()));
+      setMsg(`Imported ${n} new repositor${n === 1 ? "y" : "ies"}.`);
+    } catch {
+      setMsg("That file isn't a watchlist export.");
+    }
+  }
+
+  async function copyShareLink() {
+    const url = `${window.location.origin}/watchlist?add=${ids.join(",")}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setMsg("Share link copied. Opening it adds these repositories to any browser.");
+    } catch {
+      setMsg(url);
+    }
+  }
 
   useEffect(() => {
     setThreshold(getAlertThreshold());
@@ -124,10 +198,25 @@ export function WatchlistClient() {
         </div>
       </div>
 
+      <div className="wlactions">
+        <button className="watchbtn" onClick={exportFile} disabled={!items.length}>
+          Export
+        </button>
+        <button className="watchbtn" onClick={() => fileRef.current?.click()}>
+          Import
+        </button>
+        <button className="watchbtn" onClick={copyShareLink} disabled={!items.length}>
+          Copy share link
+        </button>
+        <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={importFile} />
+        {msg && <span className="wlmsg">{msg}</span>}
+      </div>
+
       {items.length === 0 ? (
         <div className="note" style={{ marginTop: 30 }}>
           You&apos;re not watching anything yet. Open any repository and press{" "}
-          <b style={{ color: "var(--ember)" }}>☆ Watch</b>, or star rows from the dashboard.
+          <b style={{ color: "var(--ember)" }}>☆ Watch</b>, or tap ☆ on a dashboard leaderboard row. Moving
+          browsers? Use Import with a file you exported, or open a share link.
         </div>
       ) : (
         <div style={{ marginTop: 22 }}>

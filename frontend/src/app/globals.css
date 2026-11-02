@@ -248,9 +248,6 @@ html[data-theme="paper"] {
   .searchbox input::placeholder { color:var(--dim2); }
   .searchbox .ico { position:absolute; left:20px; top:50%; transform:translateY(-50%); color:var(--ember); font-size:20px; }
   /* compact search bar embedded at the top of the dashboard */
-  .dashsearch { margin-top:0; margin-bottom:26px; }
-  .dashsearch input { font-size:15px; padding:13px 16px 13px 44px; border-radius:12px; }
-  .dashsearch .ico { font-size:17px; left:16px; }
   .filters { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
   .chip { font-family:var(--font-mono),monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
     color:var(--dim); border:1px solid var(--rule2); border-radius:20px; padding:7px 14px; cursor:pointer; transition:.22s var(--ease); }
@@ -383,6 +380,52 @@ html[data-theme="paper"] {
   .pagerinfo { font-family:var(--font-mono),monospace; font-size:12px; color:var(--dim2); }
 }
 
+
+@layer base {
+  /* Rows and cards are real links now; keep them laid out like the old divs */
+  a.cat, a.ri { display:block; }
+  button.chip { background:none; }
+  button.chip.on { background:var(--ember); }
+  .crumb a:hover { color:var(--ember); }
+  .msearch { display:none; }
+  .linkbtn { background:none; border:none; padding:0; font:inherit; color:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+  .linkbtn:hover, .foot .fm a:hover { color:var(--ember); }
+  .foot .fm a { text-decoration:underline; text-underline-offset:2px; }
+
+  /* Leaderboard rank movement vs yesterday */
+  .lentry .rk { display:flex; flex-direction:column; align-items:flex-start; line-height:1; }
+  .move { font-family:var(--font-mono),monospace; font-size:9px; font-weight:700; margin-top:4px; color:var(--dim2); letter-spacing:.02em; }
+  .move.up { color:var(--gain); }
+  .move.dn { color:var(--loss); }
+  .move.new { color:var(--plasma); text-transform:uppercase; }
+  .lentry .rtwatch { display:flex; gap:12px; align-items:center; }
+
+  /* Repo page */
+  .ractions { display:flex; gap:10px; margin-top:18px; align-items:center; flex-wrap:wrap; }
+  .signal { font-family:var(--font-mono),monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--dim); border:1px solid var(--dim); border-radius:20px; padding:2px 10px; cursor:help; }
+  .signal.good { color:var(--gain); border-color:var(--gain); }
+  .signal.warn { color:var(--loss); border-color:var(--loss); }
+  .sigwhy { font-family:var(--font-mono),monospace; font-size:10.5px; color:var(--dim2); margin-top:12px; }
+  .rangetabs { display:flex; gap:8px; margin-bottom:12px; }
+  .chartwrap { position:relative; }
+  .chartread { position:absolute; top:-6px; right:0; display:flex; gap:8px; align-items:baseline;
+    font-family:var(--font-mono),monospace; font-size:10.5px; color:var(--dim); pointer-events:none; }
+  .chartread b { color:var(--fg); font-size:12px; }
+  .bdrow { display:grid; grid-template-columns:130px 1fr 70px; gap:12px; align-items:center; padding:7px 0;
+    font-family:var(--font-mono),monospace; font-size:11px; }
+  .bdl { color:var(--dim); }
+  .bdbar, .mbar { height:5px; background:var(--rule); border-radius:3px; overflow:hidden; width:100%; }
+  .bdbar i, .mbar i { display:block; height:100%; background:linear-gradient(90deg,var(--ember2),var(--ember)); }
+  .bdv { text-align:right; color:var(--fg); }
+  .bdv em { color:var(--dim2); font-style:normal; }
+  .bdfoot { font-family:var(--font-mono),monospace; font-size:11px; color:var(--ember); text-align:right; margin-top:10px; }
+
+  /* Watchlist */
+  .wlactions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:18px; }
+  .wlmsg { font-family:var(--font-mono),monospace; font-size:11px; color:var(--dim); }
+}
+
 @keyframes drift { to { transform:translate3d(60px,40px,0) scale(1.15); } }
 @keyframes pulse { 0%,100%{ opacity:1; transform:scale(1);} 50%{ opacity:.55; transform:scale(.82);} }
 @keyframes fadeUp { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:none;} }
@@ -409,7 +452,7 @@ html[data-theme="paper"] {
   /* wordmark: flow as normal text (not flex) so it doesn't split awkwardly */
   .brand { display:block; font-size:20px; letter-spacing:-.02em; line-height:1.15; }
   .brand em { display:inline; }
-  /* drop the verbose "Vol. I · Signal from…" line on phones */
+  /* drop the date line on phones */
   .issue { display:none; }
   /* breathing room between the sticky header and the page content */
   main.wrap { padding-top:22px; }
@@ -418,12 +461,17 @@ html[data-theme="paper"] {
   .tabs a { white-space:nowrap; padding:5px 12px; font-size:11px; }
   .tabs a.on { background:color-mix(in srgb,var(--ember) 15%,transparent); border-radius:8px; }
   .tabs a.on::after { display:none; }
-  /* search is reachable via the Search tab; hide the redundant white header button */
+  /* the tab-row search button scrolls out of view on phones; use the header one */
   .kbd { display:none; }
+  .masthead { position:relative; }
+  .brand { padding-right:46px; }
+  .msearch { display:block; position:absolute; right:0; bottom:18px; width:36px; height:36px; font-size:18px;
+    line-height:1; color:var(--fg); background:none; border:1px solid var(--rule2); border-radius:8px; cursor:pointer; }
   /* centered footer */
   .foot { flex-direction:column; align-items:center; text-align:center; gap:8px; }
   /* smaller ranking score so it sits under the name cleanly */
   .trendrow .tsc .v { font-size:26px; }
+  .bdrow { grid-template-columns:100px 1fr 60px; }
   /* search box: compact on phones (was a huge 21px serif field that overflowed) */
   .searchbox { margin-top:18px; }
   .searchbox input { font-size:15px; padding:12px 14px 12px 40px; border-radius:10px; }
@@ -435,7 +483,7 @@ html[data-theme="paper"] {
     display:flex; flex-direction:column; align-items:center; justify-content:center; }
   .bigstats > div:nth-child(odd) { border-right:1px solid var(--rule); }
   .bigstats .n { font-size:24px; }
-  /* center the compact-list sections (New Entrants / AI Ecosystem) as a narrower block */
+  /* center the compact-list sections (This Week) as a narrower block */
   .panelrow > div { width:100%; max-width:300px; margin-inline:auto; }
   /* trim the dead space at the bottom of the page */
   main.wrap { padding-bottom:34px !important; }

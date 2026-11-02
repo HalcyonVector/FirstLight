@@ -3,7 +3,8 @@
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { getRepositories } from "@/lib/api";
+import Link from "next/link";
+import { getRepositories, getLanguages } from "@/lib/api";
 import { formatStat, formatDelta, getLanguageColor } from "@/lib/utils";
 import { Sparkline } from "@/components/shared/Sparkline";
 import { useSparklines } from "@/hooks/useSparklines";
@@ -14,7 +15,6 @@ const SORTS: { key: string; label: string }[] = [
   { key: "momentum_score", label: "Momentum" },
   { key: "latest_stars", label: "Most stars" },
 ];
-const LANGS = ["All", "Python", "TypeScript", "JavaScript", "Rust", "Go"];
 
 export function RepositoriesClient() {
   const router = useRouter();
@@ -53,6 +53,17 @@ export function RepositoriesClient() {
   const pages = data?.pages ?? 1;
   const total = data?.total ?? 0;
   const sparks = useSparklines(items.map((r) => r.id));
+  const { data: langData } = useQuery({
+    queryKey: ["languages"],
+    queryFn: getLanguages,
+    staleTime: 10 * 60_000,
+  });
+  const topLangs = [...(langData?.languages ?? [])]
+    .sort((a, b) => b.repo_count - a.repo_count)
+    .slice(0, 10)
+    .map((l) => l.language);
+  if (language !== "All" && !topLangs.includes(language)) topLangs.push(language);
+  const LANGS = ["All", ...topLangs];
 
   const sortLabel = SORTS.find((s) => s.key === sort)?.label ?? sort;
 
@@ -69,25 +80,28 @@ export function RepositoriesClient() {
 
       <div className="filters" style={{ marginTop: 22 }}>
         {SORTS.map((s) => (
-          <span
+          <button
             key={s.key}
             className={`chip ${sort === s.key ? "on" : ""}`}
             onClick={() => setParam({ sort: s.key, page: 1 })}
           >
             {s.label}
-          </span>
+          </button>
         ))}
       </div>
       <div className="filters" style={{ marginTop: 10 }}>
         {LANGS.map((l) => (
-          <span
+          <button
             key={l}
             className={`chip ${language === l ? "on" : ""}`}
             onClick={() => setParam({ language: l, page: 1 })}
           >
             {l}
-          </span>
+          </button>
         ))}
+        <Link className="chip" href="/languages">
+          All languages →
+        </Link>
       </div>
 
       <div className="rulehead">
@@ -103,7 +117,7 @@ export function RepositoriesClient() {
       ) : (
         <div>
           {items.map((r, i) => (
-            <div key={r.id} className="lentry" onClick={() => router.push(`/repos/${r.id}`)}>
+            <Link key={r.id} className="lentry" href={`/repos/${r.id}`}>
               <div className="rk">{(page - 1) * 20 + i + 1}</div>
               <div>
                 <div className="nm">
@@ -127,7 +141,7 @@ export function RepositoriesClient() {
                   {formatStat(r.latest_stars)} ★ · {Math.round(r.momentum_score)}
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
@@ -150,7 +164,7 @@ export function RepositoriesClient() {
 
       <div className="foot">
         <div className="fb">{formatStat(total)} repositories</div>
-        <div className="fm">Cursor-free pagination · 20 per page</div>
+        <div className="fm">20 per page · refreshed every 6 hours</div>
       </div>
     </div>
   );

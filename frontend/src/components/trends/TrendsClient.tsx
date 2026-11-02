@@ -1,33 +1,37 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getRadar } from "@/lib/api";
 import type { RadarCategory } from "@/lib/types";
 import { formatDelta } from "@/lib/utils";
-import { Sparkline } from "@/components/shared/Sparkline";
 
-/** Build a short synthetic series for a decorative sparkline, seeded by score + delta. */
-function series(score: number, delta: number): number[] {
-  return Array.from({ length: 10 }, (_, i) => {
-    const drift = (delta / 9) * i;
-    const wobble = Math.sin(i * 0.9 + score) * 2.2;
-    return score - delta / 2 + drift + wobble;
-  });
-}
+type Status = "rising" | "stable" | "declining";
 
-function statusOf(delta: number, score: number): "rising" | "stable" | "declining" {
-  if (score >= 65 && delta > 5) return "rising";
-  if (score < 35 || delta < -5) return "declining";
-  return "stable";
+/** List / Radar switch shared by /trends and /radar (one nav tab, two views). */
+export function TrendsViewTabs({ active }: { active: "list" | "radar" }) {
+  return (
+    <div className="filters" style={{ marginTop: 18 }}>
+      <Link className={`chip ${active === "list" ? "on" : ""}`} href="/trends">
+        Rankings
+      </Link>
+      <Link className={`chip ${active === "radar" ? "on" : ""}`} href="/radar">
+        Radar
+      </Link>
+    </div>
+  );
 }
 
 export function TrendsClient() {
-  const router = useRouter();
   const { data, isLoading } = useQuery({ queryKey: ["radar"], queryFn: getRadar, staleTime: 5 * 60_000 });
 
-  const all: RadarCategory[] = data
-    ? [...data.rising, ...data.stable, ...data.declining].sort((a, b) => b.momentum_score - a.momentum_score)
+  // The backend already buckets each category; keep its status rather than re-deriving one.
+  const all: (RadarCategory & { status: Status })[] = data
+    ? [
+        ...data.rising.map((c) => ({ ...c, status: "rising" as const })),
+        ...data.stable.map((c) => ({ ...c, status: "stable" as const })),
+        ...data.declining.map((c) => ({ ...c, status: "declining" as const })),
+      ].sort((a, b) => b.momentum_score - a.momentum_score)
     : [];
 
   return (
@@ -40,6 +44,7 @@ export function TrendsClient() {
         Every technology category, ranked by composite momentum — star, fork, contributor and commit
         velocity, log-normalized into a single 0–100 signal.
       </p>
+      <TrendsViewTabs active="list" />
 
       <div className="rulehead">
         Category Rankings <span className="meta">momentum · Δ vs last week</span>
@@ -51,13 +56,8 @@ export function TrendsClient() {
         <div>
           {all.map((c, i) => {
             const delta = c.change_vs_last_week;
-            const st = statusOf(delta, c.momentum_score);
             return (
-              <div
-                key={c.category.id}
-                className="trendrow"
-                onClick={() => router.push(`/trends/${c.category.slug}`)}
-              >
+              <Link key={c.category.id} className="trendrow" href={`/trends/${c.category.slug}`}>
                 <div className="idx">{String(i + 1).padStart(2, "0")}</div>
                 <div>
                   <div className="tn">{c.category.name}</div>
@@ -65,22 +65,19 @@ export function TrendsClient() {
                     {c.repo_count.toLocaleString()} repos · {formatDelta(c.stars_gained_week)} stars this week
                   </div>
                 </div>
-                <div className="tspark">
-                  <Sparkline
-                    values={series(c.momentum_score, delta)}
-                    width={150}
-                    height={44}
-                    color={delta >= 0 ? "var(--gain)" : "var(--loss)"}
-                  />
+                <div className="tspark" style={{ display: "flex", alignItems: "center" }}>
+                  <div className="mbar">
+                    <i style={{ width: `${Math.min(100, c.momentum_score)}%` }} />
+                  </div>
                 </div>
                 <div className="tsc">
                   <div className="v">{Math.round(c.momentum_score)}</div>
                   <div className={`d ${delta >= 0 ? "up" : "dn"}`}>
                     {delta > 0 ? "▲ +" : delta < 0 ? "▼ " : "— "}
-                    {Math.abs(delta).toFixed(1)} wow · {st}
+                    {Math.abs(delta).toFixed(1)} wow · {c.status}
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
@@ -90,7 +87,7 @@ export function TrendsClient() {
 
       <div className="foot">
         <div className="fb">{all.length} categories</div>
-        <div className="fm">Momentum = star + fork + contributor + commit velocity, log-normalized</div>
+        <div className="fm">Click a category for its history and top repositories</div>
       </div>
     </div>
   );

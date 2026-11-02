@@ -1,4 +1,4 @@
-import { getDashboard } from "@/lib/api";
+import { getCategoryTrend, getDashboard } from "@/lib/api";
 import type { RepoCard } from "@/lib/types";
 
 export const revalidate = 300;
@@ -28,25 +28,39 @@ function item(r: RepoCard, kind: string): string {
     </item>`;
 }
 
-export async function GET() {
+async function dashboardItems(): Promise<{ items: string; generated: string }> {
+  const data = await getDashboard();
+  const seen = new Set<number>();
+  const picks: string[] = [];
+  for (const r of [...data.top_gaining_today]) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    picks.push(item(r, "hot today"));
+  }
+  for (const r of data.top_gaining_week) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    picks.push(item(r, "rising this week"));
+  }
+  return { items: picks.join("\n"), generated: new Date(data.generated_at).toUTCString() };
+}
+
+export async function GET(request: Request) {
+  // ?category=<slug> narrows the feed to one technology category
+  const slug = new URL(request.url).searchParams.get("category");
   let items = "";
+  let title = "GitHub Trending Intelligence";
+  let link = SITE;
   let generated = new Date().toUTCString();
   try {
-    const data = await getDashboard();
-    generated = new Date(data.generated_at).toUTCString();
-    const seen = new Set<number>();
-    const picks: string[] = [];
-    for (const r of [...data.top_gaining_today]) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id);
-      picks.push(item(r, "hot today"));
+    if (slug) {
+      const cat = await getCategoryTrend(slug);
+      title = `${cat.category.name} · GitHub Trending Intelligence`;
+      link = `${SITE}/trends/${cat.category.slug}`;
+      items = (cat.top_repos ?? []).map((r) => item(r, cat.category.name)).join("\n");
+    } else {
+      ({ items, generated } = await dashboardItems());
     }
-    for (const r of data.top_gaining_week) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id);
-      picks.push(item(r, "rising this week"));
-    }
-    items = picks.join("\n");
   } catch {
     items = "";
   }
@@ -54,8 +68,8 @@ export async function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>GitHub Trending Intelligence</title>
-    <link>${SITE}</link>
+    <title>${esc(title)}</title>
+    <link>${esc(link)}</link>
     <description>Fastest-rising open-source repositories, refreshed every 6 hours.</description>
     <language>en</language>
     <lastBuildDate>${generated}</lastBuildDate>

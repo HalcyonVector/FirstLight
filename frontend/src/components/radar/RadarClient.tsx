@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { TrendsViewTabs } from "@/components/trends/TrendsClient";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getRadar } from "@/lib/api";
@@ -8,7 +9,6 @@ import type { RadarCategory } from "@/lib/types";
 import { formatDelta } from "@/lib/utils";
 
 export function RadarClient() {
-  const router = useRouter();
   const { data, isLoading } = useQuery({ queryKey: ["radar"], queryFn: getRadar, staleTime: 5 * 60_000 });
 
   const points: RadarCategory[] = useMemo(() => {
@@ -28,6 +28,7 @@ export function RadarClient() {
         One glance: what&apos;s accelerating, what&apos;s holding, what&apos;s fading. Distance from
         center is momentum; the dashed ring is the 65-point breakout line.
       </p>
+      <TrendsViewTabs active="radar" />
 
       <div className="radarwrap">
         <div>
@@ -145,7 +146,6 @@ function Rail({
   items: RadarCategory[];
   loading: boolean;
 }) {
-  const router = useRouter();
   return (
     <div className={`rail ${cls}`}>
       <h4>
@@ -157,17 +157,13 @@ function Rail({
             <div key={i} className="skel" style={{ height: 42, marginBottom: 8 }} />
           ))
         : items.map((c) => (
-            <div
-              key={c.category.id}
-              className="ri"
-              onClick={() => router.push(`/trends/${c.category.slug}`)}
-            >
+            <Link key={c.category.id} className="ri" href={`/trends/${c.category.slug}`}>
               <div className="rn">{c.category.name}</div>
               <div className="rm">
                 {Math.round(c.momentum_score)} momentum · {formatDelta(c.change_vs_last_week)} wow ·{" "}
                 {c.repo_count.toLocaleString()} repos
               </div>
-            </div>
+            </Link>
           ))}
       {!loading && !items.length && <div className="rm" style={{ color: "var(--dim2)", padding: "12px 0" }}>None</div>}
     </div>

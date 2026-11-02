@@ -6,23 +6,27 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 
+// `also` lists other routes that live under the same tab.
 const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/this-week", label: "This Week" },
-  { href: "/trends", label: "Trends" },
-  { href: "/radar", label: "Radar" },
-  { href: "/languages", label: "Languages" },
-  { href: "/repositories", label: "Repos" },
+  { href: "/trends", label: "Trends", also: ["/radar"] },
+  { href: "/repositories", label: "Repos", also: ["/languages", "/repos/"] },
   { href: "/compare", label: "Compare" },
   { href: "/watchlist", label: "Watchlist" },
 ];
 
 type Theme = "dusk" | "paper";
 
+function currentTheme(): Theme {
+  return document.documentElement.getAttribute("data-theme") === "paper" ? "paper" : "dusk";
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>("dusk");
+  const [shortcut, setShortcut] = useState("Ctrl K");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -35,13 +39,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Restore saved theme on mount (pre-paint script also sets the attribute to avoid flash)
+  // The pre-paint script in layout.tsx has already set data-theme; mirror it here.
   useEffect(() => {
-    const saved = window.localStorage.getItem("gti:theme") as Theme | null;
-    if (saved === "dusk" || saved === "paper") {
-      setTheme(saved);
-      document.documentElement.setAttribute("data-theme", saved);
-    }
+    setTheme(currentTheme());
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) setShortcut("⌘K");
   }, []);
 
   function applyTheme(next: Theme) {
@@ -54,35 +55,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }
   function toggleTheme() {
-    const cur: Theme =
-      document.documentElement.getAttribute("data-theme") === "paper" ? "paper" : "dusk";
-    applyTheme(cur === "dusk" ? "paper" : "dusk");
+    applyTheme(currentTheme() === "dusk" ? "paper" : "dusk");
   }
 
-  // The ⌘K palette requests a theme toggle via a window event
+  // The command palette requests a theme toggle via a window event
   useEffect(() => {
-    const handler = () => {
-      const cur: Theme =
-        document.documentElement.getAttribute("data-theme") === "paper" ? "paper" : "dusk";
-      const next: Theme = cur === "dusk" ? "paper" : "dusk";
-      setTheme(next);
-      document.documentElement.setAttribute("data-theme", next);
-      try {
-        window.localStorage.setItem("gti:theme", next);
-      } catch {
-        /* ignore */
-      }
-    };
-    window.addEventListener("gti-toggle-theme", handler);
-    return () => window.removeEventListener("gti-toggle-theme", handler);
+    window.addEventListener("gti-toggle-theme", toggleTheme);
+    return () => window.removeEventListener("gti-toggle-theme", toggleTheme);
   }, []);
 
-  const now = new Date();
-  const dateLine = now
+  const dateLine = new Date()
     .toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" })
     .toUpperCase();
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const isActive = (n: (typeof NAV)[number]) =>
+    n.href === "/"
+      ? pathname === "/"
+      : [n.href, ...(n.also ?? [])].some((h) => pathname.startsWith(h));
 
   return (
     <>
@@ -93,14 +82,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               GitHub Trending <em>Intelligence</em>
             </Link>
             <div className="issue" suppressHydrationWarning>
-              Vol. I · Signal from the open-source frontier
-              <br />
               {dateLine}
             </div>
+            <button className="msearch" onClick={() => setCmdOpen(true)} aria-label="Open search">
+              ⌕
+            </button>
           </div>
           <nav className="tabs">
             {NAV.map((n) => (
-              <Link key={n.href} href={n.href} className={cn(isActive(n.href) && "on")}>
+              <Link key={n.href} href={n.href} className={cn(isActive(n) && "on")}>
                 {n.label}
               </Link>
             ))}
@@ -111,9 +101,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 className="kbd"
                 onClick={() => setCmdOpen(true)}
-                aria-label="Open command palette"
+                aria-label="Open search"
               >
-                Search <span>⌘K</span>
+                Search <span suppressHydrationWarning>{shortcut}</span>
               </button>
             </div>
           </nav>

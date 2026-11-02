@@ -25,6 +25,7 @@ export interface RepoCard {
   github_created_at: string | null;
   first_seen_at: string;
   verdict?: string | null;
+  prev_rank?: number | null;
 }
 
 export interface DailyMetric {
@@ -58,6 +59,7 @@ export interface Insight {
   verdict: string | null;
   competitors: string | null; // JSON string
   tags: string[];
+  model_used?: string | null;
   generated_at: string;
 }
 
@@ -70,6 +72,14 @@ export interface RepoDetail extends RepoCard {
   github_pushed_at: string | null;
   last_synced_at: string | null;
   latest_insight: Insight | null;
+  momentum_breakdown?: MomentumBreakdown | null;
+}
+
+export interface MomentumBreakdown {
+  parts: Record<"stars" | "forks" | "contributors" | "commits" | "issues", number>;
+  recency_multiplier: number;
+  star_anomaly: boolean;
+  week_start: string;
 }
 
 export interface RepoMetrics {

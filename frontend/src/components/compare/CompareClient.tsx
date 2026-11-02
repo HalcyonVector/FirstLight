@@ -170,7 +170,7 @@ export function CompareClient() {
 
       <div className="foot">
         <div className="fb">{ids.length} / {MAX} repositories</div>
-        <div className="fm">Shareable via URL · ?ids=</div>
+        <div className="fm">Copy the URL to share this comparison</div>
       </div>
     </div>
   );
