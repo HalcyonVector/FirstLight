@@ -48,7 +48,7 @@ Everything below wires the hosted services to this repo.
 ## 2. AI key — Groq (free)
 
 1. Sign in at https://console.groq.com and create an **API key** (starts with `gsk_`). No credit card.
-2. Check https://console.groq.com/docs/models for a **current** model id. Groq rotates these; good general picks are `llama-3.3-70b-versatile` or `openai/gpt-oss-20b`. Whatever you choose becomes `LLM_MODEL`.
+2. Check https://console.groq.com/docs/models for a **current** model id. Groq rotates these; good picks are `openai/gpt-oss-120b` or `openai/gpt-oss-20b` (the Llama models were retired from the free tier in August 2026). Whatever you choose becomes `LLM_MODEL`.
 
 > Prefer Google Gemini's free tier or OpenAI instead? Same setup — just change `LLM_BASE_URL`, `LLM_MODEL`, and `LLM_API_KEY`. Or set `AI_PROVIDER=off` to skip written analyses entirely; everything else still works.
 

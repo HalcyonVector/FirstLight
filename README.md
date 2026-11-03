@@ -329,7 +329,7 @@ The stack is designed for managed hosting:
 | **Cache** | Upstash | Free Redis tier |
 | **API** | Render (free tier, `render.yaml` blueprint), Fly.io, or a small VPS | The included `render.yaml` deploys the API in one click |
 | **Scheduler** | GitHub Actions | Replaces the always on `beat` container, so no worker needs to stay running (see below) |
-| **AI** | `AI_PROVIDER=groq` with a free Groq API key, any OpenAI compatible endpoint, or `AI_PROVIDER=off` | Groq's free tier runs a hosted 70B model with no card; free hosts cannot run a local model |
+| **AI** | `AI_PROVIDER=groq` with a free Groq API key, any OpenAI compatible endpoint, or `AI_PROVIDER=off` | Groq's free tier runs a hosted 120B model (gpt-oss) with no card; free hosts cannot run a local model |
 
 Set `NEXT_PUBLIC_API_URL` on the frontend to the hosted API, and replace the local Postgres and Redis URLs with the managed ones through environment variables. A full free hosting walkthrough lives in `docs/DEPLOY-FREE.md`, and channel setup in `docs/NOTIFICATIONS.md`.
 

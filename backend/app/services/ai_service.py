@@ -17,6 +17,13 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+def reasoning_opts(model: str) -> dict:
+    """Extra payload fields for reasoning models (Groq's gpt-oss accepts reasoning_effort)."""
+    if settings.LLM_REASONING_EFFORT and "gpt-oss" in model:
+        return {"reasoning_effort": settings.LLM_REASONING_EFFORT}
+    return {}
+
+
 INSIGHT_PROMPT_SYSTEM = """You are a developer intelligence analyst.
 Analyze GitHub repositories and produce structured, factual insights for software engineers.
 Be specific. Cite numbers where available. Max 3 sentences per field. Never be vague."""
@@ -132,6 +139,7 @@ async def _via_openai_compatible(prompt: str) -> tuple[str, str, int]:
             {"role": "system", "content": INSIGHT_PROMPT_SYSTEM},
             {"role": "user", "content": prompt},
         ],
+        **reasoning_opts(settings.LLM_MODEL),
     }
     headers = {"Authorization": f"Bearer {settings.LLM_API_KEY}"}
     async with httpx.AsyncClient(timeout=120.0) as client:

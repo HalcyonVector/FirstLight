@@ -15,6 +15,7 @@ import httpx
 
 from app.core.cache import cache_get, cache_incr, cache_set
 from app.core.config import settings
+from app.services.ai_service import reasoning_opts
 from app.services.trend_service import LIFECYCLE_STAGES
 
 logger = logging.getLogger(__name__)
@@ -153,9 +154,10 @@ async def _llm_filter(q: str, languages: list[str], categories: dict[str, str]) 
     payload = {
         "model": settings.ASK_MODEL,
         "temperature": 0,
-        "max_tokens": 150,
+        "max_tokens": 400,  # room for the model's short reasoning before the small JSON filter
         "response_format": {"type": "json_object"},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": q}],
+        **reasoning_opts(settings.ASK_MODEL),
     }
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
