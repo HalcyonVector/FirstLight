@@ -49,13 +49,13 @@ export async function GET(request: Request) {
   // ?category=<slug> narrows the feed to one technology category
   const slug = new URL(request.url).searchParams.get("category");
   let items = "";
-  let title = "GitHub Trending Intelligence";
+  let title = "FirstLight";
   let link = SITE;
   let generated = new Date().toUTCString();
   try {
     if (slug) {
       const cat = await getCategoryTrend(slug);
-      title = `${cat.category.name} · GitHub Trending Intelligence`;
+      title = `${cat.category.name} · FirstLight`;
       link = `${SITE}/trends/${cat.category.slug}`;
       items = (cat.top_repos ?? []).map((r) => item(r, cat.category.name)).join("\n");
     } else {

@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/" className="brand">
               <LogoMark size={24} />
               <span>
-                GitHub Trending <em>Intelligence</em>
+                First<em>Light</em>
               </span>
             </Link>
             <div className="issue" suppressHydrationWarning>

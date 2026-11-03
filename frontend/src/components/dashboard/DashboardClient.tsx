@@ -108,7 +108,7 @@ export function DashboardClient({ initialData }: Props) {
 
       <div className="foot">
         <div className="fb">
-          GitHub Trending <span style={{ color: "var(--ember)" }}>Intelligence</span>
+          First<span style={{ color: "var(--ember)" }}>Light</span>
         </div>
         <div className="fm" suppressHydrationWarning>
           {data?.snapshot_days

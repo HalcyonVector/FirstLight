@@ -1,4 +1,4 @@
--- GitHub Trending Intelligence — PostgreSQL Schema
+-- FirstLight — PostgreSQL Schema
 -- Run: psql $DATABASE_URL -f schema.sql
 
 -- ============================================================

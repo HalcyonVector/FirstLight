@@ -1,4 +1,4 @@
-# GitHub Trending Intelligence — Architecture & PRD
+# FirstLight — Architecture & PRD
 
 > **Stack**: Next.js 14 · FastAPI · PostgreSQL · Redis · Celery · Claude API  
 > **Deployment**: Vercel (frontend) · Railway (backend) · Supabase (DB) · Upstash (Redis)

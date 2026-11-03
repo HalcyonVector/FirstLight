@@ -1,4 +1,4 @@
-/* GitHub Trending Intelligence — service worker for Web Push */
+/* FirstLight — service worker for Web Push */
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
@@ -8,9 +8,9 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: "GitHub Trending Intelligence", body: event.data ? event.data.text() : "" };
+    data = { title: "FirstLight", body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "GitHub Trending Intelligence";
+  const title = data.title || "FirstLight";
   const options = {
     body: data.body || "",
     tag: data.url || "gti",
