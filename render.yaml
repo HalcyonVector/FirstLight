@@ -18,6 +18,8 @@ services:
         sync: false
       - key: GITHUB_TOKEN        # GitHub personal access token
         sync: false
+      - key: REDIS_URL           # Upstash TCP URL (rediss://default:<password>@<host>:6379); Ask and caching need it
+        sync: false
       - key: AI_PROVIDER
         value: groq
       - key: LLM_API_KEY         # Groq (or other) API key
