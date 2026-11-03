@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCalls, getDashboard, getDigest, getRepository, getRepositoryMetrics } from "@/lib/api";
 import type { CategoryMomentum, DashboardData, RepoCard } from "@/lib/types";
-import { formatStat, formatDelta, relativeTime } from "@/lib/utils";
+import { cn, formatStat, formatDelta, relativeTime } from "@/lib/utils";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { AreaChart, shortDate } from "@/components/shared/Charts";
 import { AskBox, LifecycleChip } from "@/components/shared/Signals";
 import { releaseMarkers } from "@/lib/markers";
+import { Sparkline } from "@/components/shared/Sparkline";
+import { CountUp } from "@/components/shared/CountUp";
+import { useSparklines } from "@/hooks/useSparklines";
 
 interface Props {
   initialData: DashboardData | null;
@@ -31,11 +35,13 @@ export function DashboardClient({ initialData }: Props) {
   const tier2 = ranked.slice(1, 4);
   const cats = data?.trending_categories ?? [];
   const aiEco = data?.ai_ecosystem ?? [];
+  const sparks = useSparklines([...today.slice(0, 8), ...tier2].map((r) => r.id));
 
   if (isLoading && !data) return <DashboardSkeleton />;
 
   return (
     <div className="fade-up">
+      <Glance today={today} cats={cats} sparks={sparks} />
       <AskBox />
 
       {lead ? (
@@ -46,9 +52,11 @@ export function DashboardClient({ initialData }: Props) {
               <h3>Hottest today</h3>
               <span className="pg">▲▼ vs yesterday</span>
             </div>
-            {today.slice(0, 8).map((r, i) => (
-              <LeaderEntry key={r.id} rank={i + 1} repo={r} />
-            ))}
+            <Clip count={Math.min(today.length, 8)} limit={5} label="today">
+              {today.slice(0, 8).map((r, i) => (
+                <LeaderEntry key={r.id} rank={i + 1} repo={r} spark={sparks[String(r.id)]} />
+              ))}
+            </Clip>
           </aside>
         </section>
       ) : (
@@ -62,7 +70,7 @@ export function DashboardClient({ initialData }: Props) {
           </div>
           <div className="tier2">
             {tier2.map((r, i) => (
-              <Story key={r.id} repo={r} rank={i + 2} />
+              <Story key={r.id} repo={r} rank={i + 2} spark={sparks[String(r.id)]} />
             ))}
           </div>
         </>
@@ -76,23 +84,25 @@ export function DashboardClient({ initialData }: Props) {
       <div className="rulehead">
         Category Momentum <span className="meta">composite velocity · 0–100</span>
       </div>
-      <div className="catgrid">
+      <Clip className="catgrid" count={cats.length} limit={4} label="categories">
         {cats.map((c) => (
           <CategoryCard key={c.category.id} c={c} />
         ))}
-      </div>
+      </Clip>
 
       {aiEco.length > 0 && (
         <>
           <div className="rulehead">
             AI Ecosystem <span className="meta">agents · llm · inference</span>
           </div>
-          {aiEco.map((r) => (
-            <Link key={r.id} className="mini" href={`/repos/${r.id}`}>
-              <span className="mn">{r.full_name}</span>
-              <span className="mg">{formatDelta(r.stars_gained_week)}</span>
-            </Link>
-          ))}
+          <Clip count={aiEco.length} limit={5} label="AI repos">
+            {aiEco.map((r) => (
+              <Link key={r.id} className="mini" href={`/repos/${r.id}`}>
+                <span className="mn">{r.full_name}</span>
+                <span className="mg">{formatDelta(r.stars_gained_week)}</span>
+              </Link>
+            ))}
+          </Clip>
         </>
       )}
 
@@ -139,6 +149,16 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
       <div className="kicker" style={{ marginTop: 26 }}>
         Lead story · {hasVelocity ? "this week's biggest mover" : "most starred"}
       </div>
+      {daily.length > 2 && (
+        <div className="leadchart top">
+          <AreaChart
+            values={daily.map((d) => d.stars_total)}
+            labels={daily.map((d) => shortDate(d.date))}
+            markers={releaseMarkers(daily, detail?.releases ?? [])}
+            height={180}
+          />
+        </div>
+      )}
       <h1 className="big">
         <Link href={`/repos/${repo.id}`}>{repo.name}</Link>{" "}
         <span className="ember">
@@ -153,16 +173,6 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
         <span>momentum {Math.round(repo.momentum_score)}</span>
         <span>{formatStat(repo.latest_stars)} stars</span>
       </div>
-      {daily.length > 2 && (
-        <div className="leadchart">
-          <AreaChart
-            values={daily.map((d) => d.stars_total)}
-            labels={daily.map((d) => shortDate(d.date))}
-            markers={releaseMarkers(daily, detail?.releases ?? [])}
-            height={140}
-          />
-        </div>
-      )}
       <p className="drop">
         {insight?.why_growing ??
           (hasVelocity
@@ -177,7 +187,7 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
   );
 }
 
-function Story({ repo, rank }: { repo: RepoCard; rank: number }) {
+function Story({ repo, rank, spark }: { repo: RepoCard; rank: number; spark?: number[] }) {
   return (
     <Link className="story" href={`/repos/${repo.id}`}>
       <div className="skick">
@@ -187,7 +197,10 @@ function Story({ repo, rank }: { repo: RepoCard; rank: number }) {
       <h3>{repo.name}</h3>
       <p>{repo.verdict ?? repo.description ?? "No description provided."}</p>
       <div className="smeta">
-        <b>{formatDelta(repo.stars_gained_week)}</b> this week · momentum {Math.round(repo.momentum_score)}
+        <span>
+          <b>{formatDelta(repo.stars_gained_week)}</b> this week · momentum {Math.round(repo.momentum_score)}
+        </span>
+        {spark && <Sparkline values={spark} width={70} height={22} color="var(--gain)" />}
       </div>
     </Link>
   );
@@ -259,7 +272,7 @@ function RankMove({ rank, prev }: { rank: number; prev: number | null | undefine
   return <span className={`move ${d > 0 ? "up" : "dn"}`}>{d > 0 ? `▲${d}` : `▼${-d}`}</span>;
 }
 
-function LeaderEntry({ rank, repo }: { rank: number; repo: RepoCard }) {
+function LeaderEntry({ rank, repo, spark }: { rank: number; repo: RepoCard; spark?: number[] }) {
   return (
     <Link className="lentry compact" href={`/repos/${repo.id}`}>
       <div className="rk">
@@ -271,6 +284,11 @@ function LeaderEntry({ rank, repo }: { rank: number; repo: RepoCard }) {
         <div className="ds">{repo.language ?? "—"}</div>
       </div>
       <div className="rt rtwatch">
+        {spark && (
+          <span className="lspark">
+            <Sparkline values={spark} width={56} height={20} color="var(--gain)" />
+          </span>
+        )}
         <div>
           <div className="gv" style={repo.stars_gained_today ? undefined : { color: "var(--dim2)" }}>
             {repo.stars_gained_today ? formatDelta(repo.stars_gained_today) : "—"}
@@ -313,6 +331,88 @@ function CategoryCard({ c }: { c: CategoryMomentum }) {
   );
 }
 
+/** Four tiles that answer "what happened today" before any scrolling. */
+function Glance({
+  today,
+  cats,
+  sparks,
+}: {
+  today: RepoCard[];
+  cats: CategoryMomentum[];
+  sparks: Record<string, number[]>;
+}) {
+  const { data: calls } = useQuery({ queryKey: ["calls"], queryFn: getCalls, staleTime: 5 * 60_000, retry: false });
+  const { data: digest } = useQuery({ queryKey: ["digest"], queryFn: getDigest, staleTime: 5 * 60_000, retry: false });
+  const top = today[0];
+  const call = (calls?.calls ?? [])
+    .filter((c) => c.status === "open")
+    .sort((a, b) => b.called_on.localeCompare(a.called_on) || b.accel - a.accel)[0];
+  const hot = [...cats].sort((a, b) => b.momentum_score - a.momentum_score)[0];
+  const shipped = digest?.shipped?.[0];
+
+  return (
+    <section className="glance" aria-label="Today at a glance">
+      <Link className="gtile" href={top ? `/repos/${top.id}` : "/repositories"}>
+        <div className="gk">Biggest gain today</div>
+        <div className="gv">
+          {top ? <CountUp value={top.stars_gained_today} format={(n) => formatDelta(Math.round(n))} /> : "—"}
+        </div>
+        <div className="gn">{top?.full_name ?? "Waiting for data"}</div>
+        {top && <Sparkline values={sparks[String(top.id)]} width={120} height={24} color="var(--gain)" />}
+      </Link>
+      <Link className="gtile" href={call ? `/repos/${call.id}` : "/breakouts"}>
+        <div className="gk">Newest breakout call</div>
+        <div className="gv e">
+          {call ? <CountUp value={call.accel} format={(n) => `${n.toFixed(1)}×`} /> : "—"}
+        </div>
+        <div className="gn">{call ? `${call.full_name} · usual pace` : "No open calls"}</div>
+      </Link>
+      <Link className="gtile" href={hot ? `/trends/${hot.category.slug}` : "/trends"}>
+        <div className="gk">Hottest category</div>
+        <div className="gv">{hot ? <CountUp value={hot.momentum_score} /> : "—"}</div>
+        <div className="gn">{hot ? `${hot.category.name} · momentum` : "Waiting for data"}</div>
+      </Link>
+      <Link className="gtile" href={shipped ? `/repos/${shipped.id}` : "/this-week"}>
+        <div className="gk">Just shipped</div>
+        <div className="gv sm">{shipped?.tag ?? "—"}</div>
+        <div className="gn">
+          {shipped ? `${shipped.full_name} · ${relativeTime(shipped.published_at)}` : "No recent releases"}
+        </div>
+      </Link>
+    </section>
+  );
+}
+
+/** Shows the first `limit` children on phones, with a button for the rest. Desktop shows all. */
+function Clip({
+  count,
+  limit,
+  label,
+  className,
+  children,
+}: {
+  count: number;
+  limit: number;
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const clipped = !open && count > limit;
+  return (
+    <>
+      <div className={cn(className, clipped && "clip")} style={{ ["--clip" as string]: limit }} data-limit={limit}>
+        {children}
+      </div>
+      {clipped && (
+        <button className="showmore" onClick={() => setOpen(true)}>
+          Show all {count} {label}
+        </button>
+      )}
+    </>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="note" style={{ marginTop: 30 }}>
@@ -324,8 +424,13 @@ function EmptyState() {
 
 function DashboardSkeleton() {
   return (
-    <div style={{ marginTop: 40 }}>
-      <div className="skel" style={{ height: 52, marginBottom: 30 }} />
+    <div style={{ marginTop: 26 }}>
+      <div className="glance">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="skel" style={{ height: 104 }} />
+        ))}
+      </div>
+      <div className="skel" style={{ height: 52, margin: "26px 0 30px" }} />
       <div className="front">
         <div>
           <div className="skel" style={{ height: 60, width: "80%", marginBottom: 16 }} />

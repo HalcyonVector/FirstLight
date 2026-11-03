@@ -99,9 +99,20 @@ export function RepoDetailClient({ id }: { id: number }) {
         <div className="crumb">
           <Link href="/">Dashboard</Link> / <Link href="/repositories">Repositories</Link>
         </div>
-        <h1>
-          <span className="ow">{repo.owner} /</span> {repo.name}
-        </h1>
+        <div className="rtitle">
+          {/* GitHub serves owner avatars publicly; plain <img> avoids next/image remote config. */}
+          <img
+            className="ravatar"
+            src={`https://github.com/${repo.owner}.png?size=96`}
+            alt=""
+            width={48}
+            height={48}
+            loading="lazy"
+          />
+          <h1>
+            <span className="ow">{repo.owner} /</span> {repo.name}
+          </h1>
+        </div>
         <p className="rdesc">{repo.description ?? "No description provided."}</p>
         <div className="rmeta">
           {repo.language && (

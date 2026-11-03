@@ -8,6 +8,8 @@ import type { BreakoutCall } from "@/lib/types";
 import { formatStat, formatDelta } from "@/lib/utils";
 import { shortDate } from "@/components/shared/Charts";
 import { WatchButton } from "@/components/shared/WatchButton";
+import { Sparkline } from "@/components/shared/Sparkline";
+import { useSparklines } from "@/hooks/useSparklines";
 
 type Filter = "all" | "open" | "hit" | "miss";
 
@@ -23,6 +25,7 @@ export function BreakoutsClient() {
   const rec = data?.record;
   const calls = (data?.calls ?? []).filter((c) => filter === "all" || c.status === filter);
   const resolved = rec ? rec.hits + rec.misses : 0;
+  const sparks = useSparklines(calls.map((c) => c.id));
 
   return (
     <div className="fade-up">
@@ -69,7 +72,7 @@ export function BreakoutsClient() {
       {isLoading ? (
         Array.from({ length: 5 }).map((_, i) => <div key={i} className="skel" style={{ height: 58, marginBottom: 10 }} />)
       ) : calls.length ? (
-        calls.map((c) => <CallRow key={c.id} c={c} />)
+        calls.map((c) => <CallRow key={c.id} c={c} spark={sparks[String(c.id)]} />)
       ) : (
         <div className="note">
           {data?.calls.length
@@ -86,7 +89,7 @@ export function BreakoutsClient() {
   );
 }
 
-function CallRow({ c }: { c: BreakoutCall }) {
+function CallRow({ c, spark }: { c: BreakoutCall; spark?: number[] }) {
   return (
     <Link className="lentry callrow" href={`/repos/${c.id}`}>
       <div className="rk">
@@ -109,6 +112,9 @@ function CallRow({ c }: { c: BreakoutCall }) {
         </div>
       </div>
       <div className="rt rtwatch">
+        <span className="lspark">
+          <Sparkline values={spark ?? []} width={56} height={20} color="var(--gain)" />
+        </span>
         <div>
           <div className="gv">{formatStat(c.latest_stars)}</div>
           <div className="gl">now · {formatDelta(c.stars_gained_week)}/wk</div>
