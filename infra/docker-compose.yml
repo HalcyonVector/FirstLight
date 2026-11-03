@@ -54,7 +54,7 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
-      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-GTI <onboarding@resend.dev>}"
+      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-FirstLight <onboarding@resend.dev>}"
       DEBUG: "true"
     depends_on:
       postgres:
@@ -87,7 +87,7 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
-      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-GTI <onboarding@resend.dev>}"
+      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-FirstLight <onboarding@resend.dev>}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,7 +119,7 @@ services:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
       RESEND_API_KEY: ${RESEND_API_KEY}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
-      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-GTI <onboarding@resend.dev>}"
+      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-FirstLight <onboarding@resend.dev>}"
     depends_on:
       - redis
     volumes:

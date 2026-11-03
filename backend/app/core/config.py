@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # App
-    APP_NAME: str = "GitHub Trending Intelligence"
+    APP_NAME: str = "FirstLight"
     DEBUG: bool = False
     API_VERSION: str = "v1"
     CORS_ORIGINS: list[str] = [
@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     SLACK_WEBHOOK_URL: str = ""
     RESEND_API_KEY: str = ""              # https://resend.com free tier
     ALERT_EMAIL_TO: str = ""              # one address, or comma-separated for multiple subscribers
-    ALERT_EMAIL_FROM: str = "GTI <onboarding@resend.dev>"  # Resend's shared test sender
+    ALERT_EMAIL_FROM: str = "FirstLight <onboarding@resend.dev>"  # Resend's shared test sender
 
     # Breakout detection: young + accelerating repos
     BREAKOUT_MAX_AGE_DAYS: int = 30

@@ -1,6 +1,6 @@
-# GitHub Trending Intelligence
+# FirstLight
 
-A Bloomberg terminal for open source. It ingests trending GitHub repositories every few hours, scores them by velocity rather than raw star counts, groups them into technology categories, and writes an AI analysis for the fastest risers. Built as a Next.js dashboard on a FastAPI and Celery backend, with a local free AI model and free browser push alerts. No paid services are required to run it.
+See open source early. FirstLight is a Bloomberg terminal for trending GitHub repositories (formerly GitHub Trending Intelligence). Every few hours it ingests the trending list, scores repositories by velocity rather than raw star counts, groups them into technology categories, and writes an AI analysis for the fastest risers. Built as a Next.js dashboard on a FastAPI and Celery backend, with a local free AI model and free browser push alerts. No paid services are required to run it.
 
 ---
 

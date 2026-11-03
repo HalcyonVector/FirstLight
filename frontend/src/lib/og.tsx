@@ -49,7 +49,7 @@ export function OgFrame({ kicker, children }: { kicker: string; children: React.
         }}
       >
         <div style={{ display: "flex" }}>
-          GitHub Trending&nbsp;<span style={{ color: OG.ember }}>Intelligence</span>
+          First<span style={{ color: OG.ember }}>Light</span>
         </div>
         <div style={{ display: "flex", fontSize: 20, color: OG.dim, letterSpacing: 3, textTransform: "uppercase" }}>
           {kicker}

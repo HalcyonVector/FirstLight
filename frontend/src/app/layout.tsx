@@ -39,13 +39,13 @@ export const metadata: Metadata = {
         : "http://localhost:2326")
   ),
   title: {
-    default: "GitHub Trending Intelligence",
-    template: "%s · GitHub Trending Intelligence",
+    default: "FirstLight",
+    template: "%s · FirstLight",
   },
   description:
-    "Bloomberg Terminal for Open Source — discover emerging repositories, AI projects, and developer tools before they go mainstream.",
+    "See open source early. FirstLight tracks trending GitHub repositories, explains why they are growing, and calls breakouts before they hit the top lists.",
   keywords: ["github", "trending", "open source", "ai", "developer tools", "repositories"],
-  openGraph: { type: "website", siteName: "GitHub Trending Intelligence" },
+  openGraph: { type: "website", siteName: "FirstLight" },
   alternates: { types: { "application/rss+xml": "/rss.xml" } },
 };
 

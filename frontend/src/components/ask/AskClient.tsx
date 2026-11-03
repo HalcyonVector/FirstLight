@@ -7,6 +7,8 @@ import { ask } from "@/lib/api";
 import { formatStat, formatDelta } from "@/lib/utils";
 import { AskBox, LifecycleChip } from "@/components/shared/Signals";
 import { WatchButton } from "@/components/shared/WatchButton";
+import { Sparkline } from "@/components/shared/Sparkline";
+import { useSparklines } from "@/hooks/useSparklines";
 
 export function AskClient() {
   const q = useSearchParams().get("q")?.trim() ?? "";
@@ -17,6 +19,7 @@ export function AskClient() {
     staleTime: 10 * 60_000,
     retry: false,
   });
+  const sparks = useSparklines((data?.repos ?? []).map((r) => r.id));
 
   return (
     <div className="fade-up">
@@ -59,6 +62,9 @@ export function AskClient() {
                   <div className="ds">{r.description ?? "No description provided."}</div>
                 </div>
                 <div className="rt rtwatch">
+                  <span className="lspark">
+                    <Sparkline values={sparks[String(r.id)]} width={56} height={20} color="var(--gain)" />
+                  </span>
                   <div>
                     <div className="gv">{formatDelta(r.stars_gained_week)}</div>
                     <div className="gl">

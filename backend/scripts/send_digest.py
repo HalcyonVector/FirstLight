@@ -7,7 +7,7 @@ repos) -- to whichever notification channels are configured. Scheduled via
 
 The email is a conventional light newsletter layout (inline CSS, table-based, so
 it renders the same in Gmail / Outlook / Apple Mail) with a prefers-color-scheme
-dark variant. Every repo links to GitHub and to its analysis page on the GTI site.
+dark variant. Every repo links to GitHub and to its analysis page on the FirstLight site.
 Discord/Slack get a tidy plaintext version.
 """
 
@@ -97,7 +97,7 @@ def _shipped_lines(shipped) -> list:
 
 
 def _text_body(breakouts, movers, shipped, date_range: str) -> str:
-    parts = [f"GitHub Trending -- Weekly Digest ({date_range})", ""]
+    parts = [f"FirstLight -- Weekly Digest ({date_range})", ""]
     story = _big_story_line(breakouts, movers)
     if story:
         parts += [f"* {story}", ""]
@@ -250,7 +250,7 @@ def _html_body(breakouts, movers, shipped, date_range: str) -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
-<title>GitHub Trending Intelligence - Weekly Digest</title>
+<title>FirstLight - Weekly Digest</title>
 <style>
 @media (prefers-color-scheme: dark) {{
   body, .gti-bg {{ background:#0f1115 !important; }}
@@ -267,7 +267,7 @@ def _html_body(breakouts, movers, shipped, date_range: str) -> str:
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="gti-bg" bgcolor="{BODY}" style="background:{BODY};">
     <tr><td bgcolor="{ACCENT}" align="center" style="background:{ACCENT};padding:20px 12px;">
       <table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:720px;max-width:100%;"><tr><td style="padding:0 8px;">
-        <a href="{site}" style="font-family:{SANS};font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#ffffff;text-decoration:none;">&#9733;&nbsp; GitHub Trending Intelligence</a>
+        <a href="{site}" style="font-family:{SANS};font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#ffffff;text-decoration:none;">&#9733;&nbsp; FirstLight</a>
       </td></tr></table>
     </td></tr>
     <tr><td align="center" style="padding:28px 12px;">
@@ -293,8 +293,8 @@ def _html_body(breakouts, movers, shipped, date_range: str) -> str:
         </td></tr>
       </table>
       <div class="gti-dim" style="font-family:{SANS};font-size:12px;color:{DIM};margin-top:14px;line-height:18px;">
-        You&rsquo;re receiving this because you subscribed to the GTI weekly digest.<br>
-        <a href="{site}" style="color:{DIM};">GitHub Trending Intelligence</a>
+        You&rsquo;re receiving this because you subscribed to the FirstLight weekly digest.<br>
+        <a href="{site}" style="color:{DIM};">FirstLight</a>
       </div>
     </td></tr>
   </table>
@@ -315,7 +315,7 @@ async def main() -> None:
     text_body = _text_body(breakouts, movers, shipped, date_range)
     html_body = _html_body(breakouts, movers, shipped, date_range)
 
-    await notify("GitHub Trending -- Weekly Digest", text_body, html_body)
+    await notify("FirstLight -- Weekly Digest", text_body, html_body)
     print(f"Digest sent: {len(breakouts)} breakouts, {len(movers)} movers, {len(shipped)} releases")
 
 
