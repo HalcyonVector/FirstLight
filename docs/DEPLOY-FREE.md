@@ -87,6 +87,7 @@ Then go to the **Actions** tab → **refresh-data** → **Run workflow** to do t
 3. It will ask for the values marked as secrets. Fill in:
    - `DATABASE_URL` — same Supabase string
    - `GITHUB_TOKEN` — your PAT
+   - `REDIS_URL` — from a free Upstash Redis database (https://console.upstash.com → Connect → **TCP** tab): just the `rediss://default:<password>@<host>:6379` part, no quotes. Without it the API runs uncached and Ask uses keyword parsing only.
    - `LLM_API_KEY` — your Groq key
    - `FRONTEND_URL` — leave blank for now; you'll set it in step 5
 4. **Apply / Create**. First build takes a few minutes. When live you'll get a URL like `https://gti-api.onrender.com`. Open `https://gti-api.onrender.com/health` to confirm it's up (it returns `{"status":"ok"}`); interactive API docs are at `/api/docs`.
