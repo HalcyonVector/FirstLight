@@ -57,3 +57,13 @@ def test_filter_sql_binds_values():
 def test_describe_reads_back():
     text = describe({"language": "Rust", "category": "databases", "sort": "week"}, CATS)
     assert "Rust" in text and "Databases" in text and "this week" in text
+
+
+def test_reasoning_opts_only_for_gpt_oss(monkeypatch):
+    from app.services import ai_service
+
+    monkeypatch.setattr(ai_service.settings, "LLM_REASONING_EFFORT", "low")
+    assert ai_service.reasoning_opts("openai/gpt-oss-20b") == {"reasoning_effort": "low"}
+    assert ai_service.reasoning_opts("qwen/qwen3.8-27b") == {}
+    monkeypatch.setattr(ai_service.settings, "LLM_REASONING_EFFORT", "")
+    assert ai_service.reasoning_opts("openai/gpt-oss-120b") == {}

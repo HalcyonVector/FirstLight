@@ -39,14 +39,17 @@ class Settings(BaseSettings):
     # AI insight generation — pluggable provider.
     # "ollama" (free, local) | "groq"/"openai" (free/paid API) | "anthropic" (paid) | "off"
     AI_PROVIDER: str = "ollama"
-    AI_MAX_TOKENS: int = 1024
+    AI_MAX_TOKENS: int = 1536  # includes the reasoning tokens gpt-oss spends before answering
 
     # Free/hosted OpenAI-compatible LLM (Groq, Gemini's OpenAI endpoint, OpenAI, etc.).
     # Used when AI_PROVIDER is "groq" or "openai". Groq's free tier needs no credit card.
     # Grab a current model id from https://console.groq.com/docs/models
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "https://api.groq.com/openai/v1"
-    LLM_MODEL: str = "llama-3.3-70b-versatile"
+    LLM_MODEL: str = "openai/gpt-oss-120b"
+    # gpt-oss models reason before answering; "low" keeps that short so free-tier
+    # tokens go to the answer. Blank to omit it (for models that reject the field).
+    LLM_REASONING_EFFORT: str = "low"
 
     # Ollama (local / self-hosted, free). host.docker.internal reaches the host
     # from inside a container; change to your Ollama URL when you host it.
@@ -75,7 +78,7 @@ class Settings(BaseSettings):
     DATA_RETENTION_DAYS: int = 90         # prune daily_metrics older than this (Supabase 500MB)
 
     # AI insight pacing (free-tier rate limits)
-    AI_INSIGHT_DELAY_SEC: float = 3.0     # gap between insight calls to stay under ~20 rpm (Groq free tier caps ~30)
+    AI_INSIGHT_DELAY_SEC: float = 12.0    # ~1.3k tokens a call; stays under the free tier's ~8k tokens/minute
 
     # Notifications — fan out to whichever channels are configured (all optional).
     DISCORD_WEBHOOK_URL: str = ""
@@ -107,9 +110,9 @@ class Settings(BaseSettings):
 
     # "Ask the data": natural-language question -> structured filter.
     # A small model keeps this on its own Groq free quota (separate per model),
-    # away from the 70B model the insights use.
-    ASK_MODEL: str = "llama-3.1-8b-instant"
-    ASK_DAILY_LIMIT: int = 300            # LLM-parsed questions per day; beyond this, keyword parsing only
+    # away from the 120B model the insights use.
+    ASK_MODEL: str = "openai/gpt-oss-20b"
+    ASK_DAILY_LIMIT: int = 150            # LLM-parsed questions per day; beyond this, keyword parsing only
 
 
 @lru_cache
