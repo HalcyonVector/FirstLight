@@ -37,8 +37,9 @@ app = FastAPI(
 
 # Middleware
 _allowed_origins = list(settings.CORS_ORIGINS)
-if settings.FRONTEND_URL and settings.FRONTEND_URL not in _allowed_origins:
-    _allowed_origins.append(settings.FRONTEND_URL.rstrip("/"))
+for _url in settings.frontend_urls:
+    if _url not in _allowed_origins:
+        _allowed_origins.append(_url)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,

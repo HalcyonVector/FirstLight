@@ -28,7 +28,7 @@ services:
         value: https://api.groq.com/openai/v1
       - key: LLM_MODEL
         value: openai/gpt-oss-120b
-      - key: FRONTEND_URL        # your Vercel URL, e.g. https://your-app.vercel.app
+      - key: FRONTEND_URL        # your Vercel URL(s), comma-separated; the first is linked from emails
         sync: false
       - key: DEBUG
         value: "false"

@@ -14,9 +14,13 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "https://yourapp.vercel.app",
     ]
-    # Production frontend origin (e.g. https://your-app.vercel.app). When set, it is
-    # appended to CORS_ORIGINS at startup so you don't have to edit the list above.
+    # Production frontend origin(s), comma-separated (e.g. https://new.vercel.app,https://old.vercel.app).
+    # Each is appended to CORS_ORIGINS at startup; the first is the site that emails link to.
     FRONTEND_URL: str = ""
+
+    @property
+    def frontend_urls(self) -> list[str]:
+        return [u.strip().rstrip("/") for u in self.FRONTEND_URL.split(",") if u.strip()]
 
     # Database
     DATABASE_URL: str  # postgresql+asyncpg://user:pass@host/db
