@@ -96,12 +96,13 @@ class MomentumBreakdown(BaseModel):
     week_start: date
 
 
-class StarQuality(BaseModel):
-    sampled_at: datetime
-    sample_size: int
-    pct_new: int
-    pct_empty: int
-    verdict: str
+class StarCheck(BaseModel):
+    """This week's forks per star against the typical fast grower's."""
+    checked_on: date
+    stars_week: int
+    forks_week: int
+    typical_ratio: float
+    verdict: str  # organic / mixed / suspicious
 
 
 class ReleaseOut(BaseModel):
@@ -174,7 +175,7 @@ class RepoDetail(BaseModel):
     latest_insight: InsightOut | None = None
     momentum_breakdown: MomentumBreakdown | None = None
     lifecycle: str | None = None
-    star_quality: StarQuality | None = None
+    star_check: StarCheck | None = None
     releases: list[ReleaseOut] = []
     breakout_call: BreakoutCallOut | None = None
     spikes: list[StarSpike] = []

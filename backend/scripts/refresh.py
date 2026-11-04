@@ -46,7 +46,7 @@ async def _enrich() -> None:
         ("call odds model (daily)", lambda s: explainers.train_call_model(s, today)),
         ("lifecycle stages + breakout calls", lambda s: enrichment.update_lifecycles_and_calls(s, today)),
         ("releases", enrichment.fetch_releases),
-        ("stargazer samples", enrichment.sample_star_quality),
+        ("star activity check", enrichment.check_star_activity),
         ("star spikes", lambda s: explainers.detect_spikes(s, today)),
         ("spike causes (Hacker News, releases)", lambda s: explainers.explain_spikes(s, today)),
         ("hype curves (daily)", lambda s: explainers.update_hype_curves(s, today)),

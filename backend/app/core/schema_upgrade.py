@@ -45,14 +45,17 @@ DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_releases_published ON repo_releases(published_at DESC)",
-    # Latest stargazer sample per repo (one row, overwritten).
+    # Stargazer samples stopped working when GitHub hid stargazer lists (June 2026);
+    # the table never held rows in production.
+    "DROP TABLE IF EXISTS star_quality",
+    # This week's stars vs. forks for fast growers, rebuilt every run.
     """
-    CREATE TABLE IF NOT EXISTS star_quality (
+    CREATE TABLE IF NOT EXISTS star_activity (
         repository_id    BIGINT PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE,
-        sampled_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        sample_size      INT NOT NULL,
-        pct_new          INT NOT NULL,
-        pct_empty        INT NOT NULL,
+        checked_on       DATE NOT NULL,
+        stars_week       INT NOT NULL,
+        forks_week       INT NOT NULL,
+        typical_ratio    NUMERIC(6,4) NOT NULL,
         verdict          VARCHAR(20) NOT NULL
     )
     """,

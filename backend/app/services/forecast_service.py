@@ -94,6 +94,28 @@ def matches_repo(hit: dict, owner: str, name: str, homepage: str | None) -> bool
     return key == homepage or key.startswith(homepage + "/")
 
 
+# ---------------------------------------------------------------- star activity
+
+# GitHub stopped publishing stargazer lists in June 2026, so bought stars are
+# judged from what real interest brings along: forks. Fast-growing repos gain
+# roughly one fork per 9 stars; stars arriving with far fewer forks than the
+# week's typical ratio are flagged.
+ACTIVITY_SUSPICIOUS = 0.3  # under 30% of the typical forks-per-star
+ACTIVITY_MIXED = 0.5
+
+
+def activity_verdict(stars_week: int, forks_week: int, typical_ratio: float) -> str:
+    """organic / mixed / suspicious, from this week's forks per star against the typical repo's."""
+    if stars_week <= 0 or typical_ratio <= 0:
+        return "organic"
+    rel = (forks_week / stars_week) / typical_ratio
+    if rel < ACTIVITY_SUSPICIOUS:
+        return "suspicious"
+    if rel < ACTIVITY_MIXED:
+        return "mixed"
+    return "organic"
+
+
 # ---------------------------------------------------------------- call odds
 
 FEATURES = ("accel", "gain7", "stars", "age")

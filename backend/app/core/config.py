@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     # server never calls GitHub, so it's optional and defaults to empty.
     GITHUB_TOKEN: str = ""
     GITHUB_API_BASE: str = "https://api.github.com"
-    GITHUB_GRAPHQL_URL: str = "https://api.github.com/graphql"
 
     # Web Push (VAPID) — free browser push. Generate with `python scripts/generate_vapid.py`.
     # Leave blank to disable push; the API and workers degrade gracefully.
@@ -98,15 +97,14 @@ class Settings(BaseSettings):
 
     # Breakout calls: predictions made before a repo reaches the weekly top list
     CALLS_PER_WEEK: int = 10              # most new calls in one Monday-Sunday week
-    CALL_HIT_RANK: int = 25               # a call "comes true" on reaching this weekly rank...
+    CALL_HIT_RANK: int = 100              # a call "comes true" on reaching this weekly rank (top 25 was
+                                          # ~3% for small repos: the top is held by giants)
     CALL_WINDOW_DAYS: int = 30            # ...within this many days
 
     # Enrichment (GitHub API budget per 6-hourly run; Actions token allows 1,000/hr)
     RELEASES_TOP_N: int = 60              # top repos by momentum to fetch releases for (+ watched)
     RELEASES_MAX_REPOS: int = 100
-    STAR_SAMPLE_TOP_N: int = 20           # GraphQL stargazer samples per run (~1 point each)
-    STAR_SAMPLE_MIN_WEEK: int = 300       # only sample repos gaining at least this many stars/week
-    STAR_SAMPLE_EVERY_DAYS: int = 3
+    STAR_CHECK_MIN_WEEK: int = 300        # star/fork activity check: repos gaining at least this many stars/week
 
     # Retention for tables that would otherwise grow forever (Supabase 500MB)
     RELEASE_RETENTION_DAYS: int = 180

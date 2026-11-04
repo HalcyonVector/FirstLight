@@ -139,28 +139,6 @@ def is_breakout_candidate(
     )
 
 
-def summarize_stargazers(sample: list[dict]) -> dict | None:
-    """
-    Judge a sample of recent stargazers. Each item has "account_age_days" (age
-    of the account when it starred), "followers" and "repos". Farmed stars
-    tend to come from brand-new or completely empty accounts.
-    """
-    if not sample:
-        return None
-    n = len(sample)
-    new = sum(1 for s in sample if s["account_age_days"] < 30)
-    empty = sum(1 for s in sample if s["followers"] == 0 and s["repos"] == 0)
-    pct_new = round(100 * new / n)
-    pct_empty = round(100 * empty / n)
-    if pct_new >= 40 or pct_empty >= 50:
-        verdict = "suspicious"
-    elif pct_new >= 20 or pct_empty >= 30:
-        verdict = "mixed"
-    else:
-        verdict = "organic"
-    return {"sample_size": n, "pct_new": pct_new, "pct_empty": pct_empty, "verdict": verdict}
-
-
 def classify_radar_status(score: float, prev_score: float | None) -> str:
     """Classify into rising / stable / declining based on score and trend."""
     if prev_score is None:

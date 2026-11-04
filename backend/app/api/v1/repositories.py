@@ -294,17 +294,17 @@ async def get_similar(repo_id: int, db: AsyncSession = Depends(get_db)):
 
 
 async def _enrichment(db: AsyncSession, repo_id: int) -> dict:
-    """Lifecycle, stargazer sample, releases and breakout call (pipeline-made tables)."""
+    """Lifecycle, star activity check, releases and breakout call (pipeline-made tables)."""
     try:
         row = (
             await db.execute(
                 text(
                     """
                     SELECT r.lifecycle,
-                           q.sampled_at, q.sample_size, q.pct_new, q.pct_empty, q.verdict,
+                           q.checked_on, q.stars_week, q.forks_week, q.typical_ratio, q.verdict,
                            c.called_on, c.stars_at_call, c.hit_on, c.best_rank
                     FROM repositories r
-                    LEFT JOIN star_quality q ON q.repository_id = r.id
+                    LEFT JOIN star_activity q ON q.repository_id = r.id
                     LEFT JOIN breakout_calls c ON c.repository_id = r.id
                     WHERE r.id = :rid
                     """
@@ -330,10 +330,10 @@ async def _enrichment(db: AsyncSession, repo_id: int) -> dict:
 
     out: dict = {"lifecycle": row.lifecycle if row else None,
                  "releases": [dict(r._mapping) for r in releases]}
-    if row and row.sampled_at:
-        out["star_quality"] = {
-            "sampled_at": row.sampled_at, "sample_size": row.sample_size,
-            "pct_new": row.pct_new, "pct_empty": row.pct_empty, "verdict": row.verdict,
+    if row and row.checked_on:
+        out["star_check"] = {
+            "checked_on": row.checked_on, "stars_week": row.stars_week, "forks_week": row.forks_week,
+            "typical_ratio": float(row.typical_ratio), "verdict": row.verdict,
         }
     if row and row.called_on:
         age = (datetime.now(timezone.utc).date() - row.called_on).days
