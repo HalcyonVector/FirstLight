@@ -12,11 +12,11 @@ interface ChartProps {
   format?: (v: number) => string;
 }
 
-/** An annotated point on a chart: a release, or a star milestone being crossed. */
+/** An annotated point on a chart: a release, a star milestone being crossed, or a star spike. */
 export interface ChartMarker {
   index: number;
   label: string;
-  kind: "release" | "milestone";
+  kind: "release" | "milestone" | "spike";
 }
 
 const fmtDefault = (v: number) => formatStat(Math.round(v));
@@ -75,7 +75,7 @@ export function AreaChart({
         {markers.map((m, i) => (
           <g key={i} className={`cmark ${m.kind}`}>
             <line x1={X(m.index)} x2={X(m.index)} y1={14} y2={h} />
-            <circle cx={X(m.index)} cy={10} r={m.kind === "release" ? 4 : 3.5} />
+            <circle cx={X(m.index)} cy={10} r={m.kind === "milestone" ? 3.5 : m.kind === "spike" ? 4.5 : 4} />
             <title>{m.label}</title>
           </g>
         ))}

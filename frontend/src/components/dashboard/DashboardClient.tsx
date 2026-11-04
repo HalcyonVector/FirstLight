@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getCalls, getDashboard, getDigest, getRepository, getRepositoryMetrics } from "@/lib/api";
-import type { CategoryMomentum, DashboardData, RepoCard } from "@/lib/types";
+import { getCalls, getDashboard, getDigest, getRepository, getRepositoryMetrics, getSpikes } from "@/lib/api";
+import type { CategoryMomentum, DashboardData, RepoCard, StarCheck } from "@/lib/types";
 import { cn, formatStat, formatDelta, relativeTime } from "@/lib/utils";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { AreaChart, shortDate } from "@/components/shared/Charts";
-import { AskBox, LifecycleChip } from "@/components/shared/Signals";
-import { releaseMarkers } from "@/lib/markers";
+import { AskBox, LifecycleChip, OddsChip, StarFlag, useStarChecks } from "@/components/shared/Signals";
+import { releaseMarkers, spikeCauseLine, spikeMarkers } from "@/lib/markers";
 import { Sparkline } from "@/components/shared/Sparkline";
 import { CountUp } from "@/components/shared/CountUp";
 import { useSparklines } from "@/hooks/useSparklines";
@@ -36,6 +36,7 @@ export function DashboardClient({ initialData }: Props) {
   const cats = data?.trending_categories ?? [];
   const aiEco = data?.ai_ecosystem ?? [];
   const sparks = useSparklines([...today.slice(0, 8), ...tier2].map((r) => r.id));
+  const checks = useStarChecks([...today.slice(0, 8), ...tier2].map((r) => r.id));
 
   if (isLoading && !data) return <DashboardSkeleton />;
 
@@ -54,7 +55,7 @@ export function DashboardClient({ initialData }: Props) {
             </div>
             <Clip count={Math.min(today.length, 8)} limit={5} label="today">
               {today.slice(0, 8).map((r, i) => (
-                <LeaderEntry key={r.id} rank={i + 1} repo={r} spark={sparks[String(r.id)]} />
+                <LeaderEntry key={r.id} rank={i + 1} repo={r} spark={sparks[String(r.id)]} check={checks[String(r.id)]} />
               ))}
             </Clip>
           </aside>
@@ -75,6 +76,8 @@ export function DashboardClient({ initialData }: Props) {
           </div>
         </>
       )}
+
+      <WhyTheyJumped />
 
       <div className="cols">
         <CallsBox />
@@ -143,6 +146,8 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
   });
   const insight = detail?.latest_insight;
   const daily = metrics?.daily ?? [];
+  const why = (detail?.spikes ?? []).find((s) => s.causes.length > 0);
+  const whyLink = why?.causes[0]?.url;
 
   return (
     <article className="leadstory">
@@ -154,7 +159,7 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
           <AreaChart
             values={daily.map((d) => d.stars_total)}
             labels={daily.map((d) => shortDate(d.date))}
-            markers={releaseMarkers(daily, detail?.releases ?? [])}
+            markers={[...releaseMarkers(daily, detail?.releases ?? []), ...spikeMarkers(daily, detail?.spikes ?? [])]}
             height={180}
           />
         </div>
@@ -166,6 +171,13 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
         </span>
       </h1>
       <p className="standfirst">{repo.description ?? "No description provided."}</p>
+      {why && (
+        <a className="whyline" href={whyLink ?? `/repos/${repo.id}`} target={whyLink ? "_blank" : undefined} rel="noopener noreferrer">
+          <b>Why:</b> {spikeCauseLine(why)}
+          {why.causes[0]?.kind === "hn" && <> &ldquo;{why.causes[0].title}&rdquo;</>} · +{formatStat(why.gain)} stars on{" "}
+          {shortDate(why.date)}
+        </a>
+      )}
       <div className="byline">
         <LifecycleChip stage={detail?.lifecycle} />
         <span>{repo.full_name}</span>
@@ -225,7 +237,7 @@ function CallsBox() {
         open.map((c) => (
           <Link key={c.id} className="mini" href={`/repos/${c.id}`}>
             <span className="mn">{c.full_name}</span>
-            <span className="mg">{c.accel.toFixed(1)}× pace</span>
+            {c.prob != null ? <OddsChip prob={c.prob} /> : <span className="mg">{c.accel.toFixed(1)}× pace</span>}
           </Link>
         ))
       ) : (
@@ -263,6 +275,38 @@ function ShippedBox() {
   );
 }
 
+/** This week's biggest star spikes that have a public trigger (Hacker News, a release). */
+function WhyTheyJumped() {
+  const { data } = useQuery({ queryKey: ["spikes", 7], queryFn: () => getSpikes(7), staleTime: 5 * 60_000, retry: false });
+  const spikes = (data?.spikes ?? []).slice(0, 4);
+  if (!spikes.length) return null;
+  return (
+    <>
+      <div className="rulehead">
+        Why they jumped <span className="meta">star spikes this week, and what set them off</span>
+      </div>
+      <div className="jumps">
+        {spikes.map((s) => {
+          const c = s.causes[0];
+          return (
+            <Link key={`${s.id}-${s.date}`} className="jump" href={`/repos/${s.id}`}>
+              <div className="jg">+{formatStat(s.gain)}</div>
+              <div className="jn">{s.full_name}</div>
+              <div className="jc">
+                <span className={`ck ${c.kind}`}>{c.kind === "hn" ? `HN · ${formatStat(c.points ?? 0)} pts` : "Release"}</span>{" "}
+                {c.title}
+              </div>
+              <div className="jd">
+                {shortDate(s.date)} · usually {formatStat(s.baseline)}/day
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /** ▲3 / ▼2 / NEW compared with yesterday's rank on the daily-gain board. */
 function RankMove({ rank, prev }: { rank: number; prev: number | null | undefined }) {
   if (prev === undefined) return null; // API without rank history
@@ -272,7 +316,17 @@ function RankMove({ rank, prev }: { rank: number; prev: number | null | undefine
   return <span className={`move ${d > 0 ? "up" : "dn"}`}>{d > 0 ? `▲${d}` : `▼${-d}`}</span>;
 }
 
-function LeaderEntry({ rank, repo, spark }: { rank: number; repo: RepoCard; spark?: number[] }) {
+function LeaderEntry({
+  rank,
+  repo,
+  spark,
+  check,
+}: {
+  rank: number;
+  repo: RepoCard;
+  spark?: number[];
+  check?: StarCheck;
+}) {
   return (
     <Link className="lentry compact" href={`/repos/${repo.id}`}>
       <div className="rk">
@@ -281,7 +335,9 @@ function LeaderEntry({ rank, repo, spark }: { rank: number; repo: RepoCard; spar
       </div>
       <div>
         <div className="nm">{repo.name}</div>
-        <div className="ds">{repo.language ?? "—"}</div>
+        <div className="ds">
+          {repo.language ?? "—"} <StarFlag check={check} />
+        </div>
       </div>
       <div className="rt rtwatch">
         {spark && (
@@ -365,7 +421,11 @@ function Glance({
         <div className="gv e">
           {call ? <CountUp value={call.accel} format={(n) => `${n.toFixed(1)}×`} /> : "—"}
         </div>
-        <div className="gn">{call ? `${call.full_name} · usual pace` : "No open calls"}</div>
+        <div className="gn">
+          {call
+            ? `${call.full_name} · ${call.prob != null ? `${Math.round(call.prob * 100)}% odds` : "usual pace"}`
+            : "No open calls"}
+        </div>
       </Link>
       <Link className="gtile" href={hot ? `/trends/${hot.category.slug}` : "/trends"}>
         <div className="gk">Hottest category</div>

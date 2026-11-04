@@ -5,13 +5,13 @@ import { useEffect, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getRepository, getRepositoryMetrics, getSimilarRepos } from "@/lib/api";
 import { addRecentRepo } from "@/lib/recent";
-import type { DailyMetric, MomentumBreakdown, RepoDetail, StarQuality } from "@/lib/types";
+import type { DailyMetric, HypeCurve, MomentumBreakdown, RepoDetail, StarQuality, StarSpike } from "@/lib/types";
 import { formatStat, formatDelta, getLanguageColor, relativeTime } from "@/lib/utils";
 import { parseCompetitors } from "@/lib/chart";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { AreaChart, BarChart, shortDate } from "@/components/shared/Charts";
-import { LifecycleChip } from "@/components/shared/Signals";
-import { milestoneMarkers, releaseMarkers } from "@/lib/markers";
+import { LifecycleChip, OddsChip } from "@/components/shared/Signals";
+import { milestoneMarkers, releaseMarkers, spikeMarkers } from "@/lib/markers";
 
 type Range = "30d" | "90d";
 
@@ -63,7 +63,11 @@ export function RepoDetailClient({ id }: { id: number }) {
   const competitors = parseCompetitors(insight?.competitors);
 
   const starsSeries = daily.map((d) => d.stars_total);
-  const markers = [...releaseMarkers(daily, repo.releases ?? []), ...milestoneMarkers(daily)];
+  const markers = [
+    ...releaseMarkers(daily, repo.releases ?? []),
+    ...milestoneMarkers(daily),
+    ...spikeMarkers(daily, repo.spikes ?? []),
+  ];
   const dayLabels = daily.map((d) => shortDate(d.date));
   const gainedDays = daily.slice(-30);
 
@@ -150,7 +154,7 @@ export function RepoDetailClient({ id }: { id: number }) {
           <span>
             Stars over time
             <span className="legend">
-              <i className="release" /> release <i className="milestone" /> milestone
+              <i className="release" /> release <i className="milestone" /> milestone <i className="spike" /> spike
             </span>
           </span>
           <span className="rangetabs" role="group" aria-label="Chart range">
@@ -167,6 +171,8 @@ export function RepoDetailClient({ id }: { id: number }) {
           <div className="note" style={{ margin: 0 }}>Metrics will appear once daily snapshots accumulate.</div>
         )}
       </div>
+
+      {(repo.spikes?.length ?? 0) > 0 && <WhyItJumped spikes={repo.spikes!} />}
 
       <div className="detailgrid">
         <div>
@@ -197,6 +203,7 @@ export function RepoDetailClient({ id }: { id: number }) {
           {repo.momentum_breakdown && (
             <ScoreBreakdown b={repo.momentum_breakdown} score={repo.momentum_score} />
           )}
+          {repo.hype && <AfterTheHype h={repo.hype} />}
           {repo.star_quality && <StarCheck q={repo.star_quality} />}
           {(repo.releases?.length ?? 0) > 0 && <Releases repo={repo} />}
         </div>
@@ -389,8 +396,80 @@ function CallNote({ call }: { call: NonNullable<RepoDetail["breakout_call"]> }) 
         : `Called as a breakout on ${on}, but it did not reach the weekly top list in time.`;
   return (
     <Link className={`callnote ${call.status}`} href="/breakouts">
-      ◎ {text}
+      ◎ {text} {call.status === "open" && <OddsChip prob={call.prob} />}
     </Link>
+  );
+}
+
+/** Each recent star spike with what we found behind it. */
+function WhyItJumped({ spikes }: { spikes: StarSpike[] }) {
+  return (
+    <div className="chartcard whyjump">
+      <h4>
+        Why it jumped <span>Hacker News and releases, checked each refresh</span>
+      </h4>
+      {spikes.map((s) => (
+        <div key={s.date} className="spikerow">
+          <div className="spikeday">
+            <b>+{formatStat(s.gain)}</b>
+            <span>
+              {shortDate(s.date)} · usually {formatStat(s.baseline)}/day
+            </span>
+          </div>
+          <div className="spikecauses">
+            {s.causes.length ? (
+              s.causes.map((c, i) => (
+                <a key={i} href={c.url ?? undefined} target="_blank" rel="noopener noreferrer" className={`cause ${c.kind}`}>
+                  <span className="ck">{c.kind === "hn" ? "Hacker News" : "Release"}</span>
+                  <span className="ct">{c.title}</span>
+                  {c.kind === "hn" && (
+                    <span className="cm">
+                      {formatStat(c.points ?? 0)} points · {formatStat(c.comments ?? 0)} comments
+                    </span>
+                  )}
+                </a>
+              ))
+            ) : (
+              <span className="nocause">
+                No public trigger found on Hacker News or in releases. It may have come from social media or a
+                newsletter.
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Where the repo is relative to its biggest week. */
+function AfterTheHype({ h }: { h: HypeCurve }) {
+  const pct = h.peak_gain7 ? Math.round((100 * h.now_gain7) / h.peak_gain7) : 0;
+  const halfDays = h.half_on
+    ? Math.round((new Date(h.half_on).getTime() - new Date(h.peak_on).getTime()) / 86_400_000)
+    : null;
+  const commitsHeld = h.commits_peak > 0 ? h.commits_now >= Math.max(1, h.commits_peak / 2) : null;
+  return (
+    <div className="chartcard" style={{ marginTop: 22 }}>
+      <h4>
+        After the hype <span>peak week ended {shortDate(h.peak_on)}</span>
+      </h4>
+      <div className="bdrow">
+        <span className="bdl">Now vs peak</span>
+        <span className="bdbar">
+          <i style={{ width: `${Math.min(100, pct)}%` }} />
+        </span>
+        <span className="bdv">{pct}%</span>
+      </div>
+      <p className="sigwhy">
+        Best week: {formatDelta(h.peak_gain7)} stars. This week: {formatDelta(h.now_gain7)}.{" "}
+        {halfDays != null
+          ? `Weekly stars fell to half the peak ${halfDays} day${halfDays === 1 ? "" : "s"} later.`
+          : "Weekly stars have not fallen to half the peak."}{" "}
+        {commitsHeld === true && "Commit activity has held up."}
+        {commitsHeld === false && "Commit activity has dropped off since."}
+      </p>
+    </div>
   );
 }
 

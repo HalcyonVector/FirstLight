@@ -1,5 +1,9 @@
 import type {
   AskResult,
+  ExplainedSpike,
+  ForUserResult,
+  HypeData,
+  StarCheck,
   CallsResponse,
   CategoryMomentum,
   DigestData,
@@ -147,3 +151,25 @@ export const getReleases = (ids: number[], days = 30): Promise<{ releases: Shipp
   fetchJSON<{ releases: ShippedRelease[] }>("/releases", { ids: ids.join(","), days });
 export const getDigest = (): Promise<DigestData> => fetchJSON<DigestData>("/digest");
 export const ask = (q: string): Promise<AskResult> => fetchJSON<AskResult>("/ask", { q });
+export const getSpikes = (days = 7): Promise<{ spikes: ExplainedSpike[] }> =>
+  fetchJSON<{ spikes: ExplainedSpike[] }>("/spikes", { days });
+export const getHype = (): Promise<HypeData> => fetchJSON<HypeData>("/hype");
+export const getStarChecks = (ids: number[]): Promise<{ checks: Record<string, StarCheck> }> =>
+  fetchJSON<{ checks: Record<string, StarCheck> }>("/star-checks", { ids: ids.join(",") });
+
+/** The GitHub-stars radar. Errors carry the API's own message (unknown user, paused for today). */
+export async function getForUser(login: string): Promise<ForUserResult> {
+  const url = new URL(`${API}/for-user`);
+  url.searchParams.set("login", login);
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    let detail = "Couldn't look that up right now.";
+    try {
+      detail = (await res.json()).detail ?? detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<ForUserResult>;
+}
