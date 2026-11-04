@@ -151,3 +151,20 @@ def test_radar_prefers_shared_topics_and_explains_the_pick():
     assert radar_score(other, profile) == (0.0, [])
     assert closest_starred(dbish, starred) == "a/vec"
     assert closest_starred(ui, starred) is None  # one shared topic isn't enough to name a repo
+
+
+def test_model_that_loses_to_the_average_falls_back_to_it():
+    from app.services.forecast_service import call_odds
+
+    # Labels unrelated to the features: the held-out backtest can't beat the base rate.
+    rng = random.Random(11)
+    noise = [dict(s, hit=rng.random() < 0.2) for s in _samples(200, seed=3)]
+    result = train_and_backtest(noise)
+    assert result is not None
+    m = result["model"]
+    assert m["usable"] is False
+    assert call_odds(m, [3.0, 6.0, 7.0, 4.0]) == m["base_rate"]
+    assert call_odds(m, [0.9, 6.0, 7.0, 4.0]) == m["base_rate"]
+    good = train_and_backtest(_samples(600))
+    assert good["model"]["usable"] is True
+    assert call_odds(good["model"], [3.3, 6.0, 7.0, 4.0]) != good["model"]["base_rate"]

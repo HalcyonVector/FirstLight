@@ -793,3 +793,5 @@ a.hyperow:hover span:first-child { color:var(--ember); }
 @media (max-width:480px) {
   .jumps { grid-template-columns:1fr; }
 }
+.oddsnote { margin-top:10px; padding:10px 14px; border-left:3px solid var(--dim2); background:var(--panel);
+  border-radius:0 8px 8px 0; color:var(--dim); max-width:72ch; font-size:14px; }

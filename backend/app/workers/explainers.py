@@ -261,7 +261,12 @@ async def train_call_model(session: AsyncSession, today: date) -> None:
         },
     )
     await session.commit()
-    logger.info("Call odds: model fitted on %d samples (%d hits)", result["samples"], result["positives"])
+    bt = result["backtest"] or {}
+    logger.info(
+        "Call odds: model fitted on %d samples (%d hits); backtest skill %s, %s",
+        result["samples"], result["positives"], bt.get("skill"),
+        "in use" if result["model"]["usable"] else "not better than the average yet, using the average",
+    )
 
 
 async def load_call_model(session: AsyncSession) -> dict | None:

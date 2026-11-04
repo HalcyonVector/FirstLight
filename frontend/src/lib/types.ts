@@ -274,6 +274,8 @@ export interface CallModelInfo {
   positives: number;
   base_rate: number;
   backtest: CallBacktest | null;
+  /** False while the model doesn't beat the plain average; calls then show the average odds. */
+  usable?: boolean;
 }
 
 export interface CallsResponse {

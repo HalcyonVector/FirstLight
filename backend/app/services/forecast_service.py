@@ -185,6 +185,9 @@ def calibration_bins(probs: list[float], labels: list[int]) -> list[dict]:
     return out
 
 
+MIN_SKILL = 0.05  # the model must be at least 5% better than guessing the average
+
+
 def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int = 5) -> dict | None:
     """
     samples: {"date", "accel", "gain7", "stars", "age", "hit"}, oldest first.
@@ -223,6 +226,15 @@ def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int 
             "top_third_rate": round(100 * sum(y for _, y in top) / len(top)),
         }
     final = fit_logistic(*xy(samples))
+    # A forecaster that can't clearly beat the plain average on held-out history
+    # shouldn't rank anything: until it does, every call gets the average odds.
+    final["usable"] = bool(
+        backtest
+        and backtest["skill"] is not None
+        and backtest["skill"] >= MIN_SKILL
+        and backtest["top_third_rate"] > backtest["base_rate"]
+    )
+    final["base_rate"] = round(pos / len(samples), 4)
     return {
         "model": final,
         "samples": len(samples),
@@ -230,6 +242,13 @@ def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int 
         "base_rate": round(100 * pos / len(samples)),
         "backtest": backtest,
     }
+
+
+def call_odds(model: dict, feats: list[float]) -> float:
+    """The model's odds when it has earned them, otherwise the historical average."""
+    if model.get("usable", True):
+        return predict(model, feats)
+    return float(model.get("base_rate", 0.0))
 
 
 # ---------------------------------------------------------------- hype half-life

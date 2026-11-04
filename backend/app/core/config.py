@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     RELEASES_TOP_N: int = 60              # top repos by momentum to fetch releases for (+ watched)
     RELEASES_MAX_REPOS: int = 100
     STAR_CHECK_MIN_WEEK: int = 300        # star/fork activity check: repos gaining at least this many stars/week
+    STAR_CHECK_MAX_AGE_DAYS: int = 730    # ...and created within this many days (old repos get bookmark stars)
 
     # Retention for tables that would otherwise grow forever (Supabase 500MB)
     RELEASE_RETENTION_DAYS: int = 180

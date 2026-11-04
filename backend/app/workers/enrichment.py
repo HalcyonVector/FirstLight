@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services.forecast_service import activity_verdict, call_features, predict
+from app.services.forecast_service import activity_verdict, call_features, call_odds
 from app.services.github_service import github_service
 from app.services.trend_service import (
     acceleration,
@@ -142,7 +142,7 @@ async def update_lifecycles_and_calls(session: AsyncSession, today: date) -> Non
             if not model:
                 return None
             accel = acceleration(r["gain7"], r["prior_avg"])
-            return predict(model, call_features(accel, r["gain7"], r["stars"], r["age_days"]))
+            return call_odds(model, call_features(accel, r["gain7"], r["stars"], r["age_days"]))
 
         pool = [
             r for r in rows
@@ -153,10 +153,11 @@ async def update_lifecycles_and_calls(session: AsyncSession, today: date) -> Non
         ]
         for r in pool:
             r["prob"] = odds(r)
-        # With a model, call the likeliest; without one, the sharpest acceleration.
+        # With a model that beats the average, call the likeliest; otherwise the sharpest acceleration.
+        ranks = bool(model and model.get("usable", True))
         candidates = sorted(
             pool,
-            key=lambda r: r["prob"] if r["prob"] is not None else acceleration(r["gain7"], r["prior_avg"]),
+            key=lambda r: r["prob"] if ranks else acceleration(r["gain7"], r["prior_avg"]),
             reverse=True,
         )[:room]
         for r in candidates:
@@ -228,6 +229,9 @@ async def check_star_activity(session: AsyncSession) -> None:
     """
     For every repo gaining STAR_CHECK_MIN_WEEK+ stars this week, compare its
     forks per star with the typical fast grower's (the median this week).
+    Only young, non-list repos get a verdict: curated lists and long-established
+    projects are starred as bookmarks and rarely forked, and bought stars go to
+    new projects.
     """
     rows = (
         await session.execute(
@@ -236,39 +240,46 @@ async def check_star_activity(session: AsyncSession) -> None:
                 WITH latest AS (SELECT MAX(date) AS d FROM daily_metrics)
                 SELECT now.repository_id AS rid,
                        now.stars_total - prev.stars_total AS stars_week,
-                       GREATEST(now.forks_total - prev.forks_total, 0) AS forks_week
+                       GREATEST(now.forks_total - prev.forks_total, 0) AS forks_week,
+                       (r.github_created_at > NOW() - (:max_age * INTERVAL '1 day')
+                        AND r.name NOT ILIKE 'awesome%'
+                        AND NOT (COALESCE(r.topics, '{}') && ARRAY['awesome', 'awesome-list', 'awesome-lists']::text[]))
+                           AS judged
                 FROM daily_metrics now
                 JOIN latest ON now.date = latest.d
                 JOIN daily_metrics prev
                   ON prev.repository_id = now.repository_id AND prev.date = latest.d - 7
+                JOIN repositories r ON r.id = now.repository_id
                 WHERE now.stars_total - prev.stars_total >= :min_week
                 """
             ),
-            {"min_week": settings.STAR_CHECK_MIN_WEEK},
+            {"min_week": settings.STAR_CHECK_MIN_WEEK, "max_age": settings.STAR_CHECK_MAX_AGE_DAYS},
         )
     ).fetchall()
     await session.execute(text("DELETE FROM star_activity"))
     if rows:
+        # The norm comes from every fast grower; only eligible repos are judged against it.
         typical = median(r.forks_week / r.stars_week for r in rows)
         today = date.today()
         checks = [
             {"rid": r.rid, "d": today, "s": int(r.stars_week), "f": int(r.forks_week),
              "t": round(typical, 4), "v": activity_verdict(r.stars_week, r.forks_week, typical)}
-            for r in rows
+            for r in rows if r.judged
         ]
-        await session.execute(
-            text(
-                """
-                INSERT INTO star_activity
-                    (repository_id, checked_on, stars_week, forks_week, typical_ratio, verdict)
-                VALUES (:rid, :d, :s, :f, :t, :v)
-                """
-            ),
-            checks,
-        )
+        if checks:
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO star_activity
+                        (repository_id, checked_on, stars_week, forks_week, typical_ratio, verdict)
+                    VALUES (:rid, :d, :s, :f, :t, :v)
+                    """
+                ),
+                checks,
+            )
         flagged = sum(1 for c in checks if c["v"] == "suspicious")
-        logger.info("Star activity: %d repos checked, typical %.3f forks per star, %d flagged",
-                    len(checks), typical, flagged)
+        logger.info("Star activity: %d of %d fast growers judged (young, not lists), typical %.3f forks per star, %d flagged",
+                    len(checks), len(rows), typical, flagged)
     await session.commit()
 
 
