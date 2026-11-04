@@ -56,6 +56,47 @@ DDL = [
         verdict          VARCHAR(20) NOT NULL
     )
     """,
+    # Odds a call comes true, from the model in call_model at the time of the call.
+    "ALTER TABLE breakout_calls ADD COLUMN IF NOT EXISTS prob NUMERIC(4,3)",
+    # Days a repo's stars jumped, and what we found behind each jump.
+    """
+    CREATE TABLE IF NOT EXISTS star_spikes (
+        id               BIGSERIAL PRIMARY KEY,
+        repository_id    BIGINT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+        spike_date       DATE NOT NULL,
+        gain             INT NOT NULL,
+        baseline         INT NOT NULL,
+        causes           JSONB NOT NULL DEFAULT '[]'::jsonb,
+        checked_at       TIMESTAMPTZ,
+        UNIQUE (repository_id, spike_date)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_spikes_date ON star_spikes(spike_date DESC)",
+    # The fitted odds model and its backtest (one row, replaced daily).
+    """
+    CREATE TABLE IF NOT EXISTS call_model (
+        id               SMALLINT PRIMARY KEY DEFAULT 1,
+        trained_on       DATE NOT NULL,
+        samples          INT NOT NULL,
+        positives        INT NOT NULL,
+        base_rate        INT NOT NULL,
+        model            JSONB NOT NULL,
+        backtest         JSONB
+    )
+    """,
+    # Per repo: its biggest week, where it is now, and when it fell to half.
+    """
+    CREATE TABLE IF NOT EXISTS hype_curves (
+        repository_id    BIGINT PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE,
+        peak_on          DATE NOT NULL,
+        peak_gain7       INT NOT NULL,
+        now_gain7        INT NOT NULL,
+        half_on          DATE,
+        commits_peak     INT NOT NULL DEFAULT 0,
+        commits_now      INT NOT NULL DEFAULT 0,
+        as_of            DATE NOT NULL
+    )
+    """,
     # Same columns as the UNIQUE (repository_id, date) index, which Postgres
     # can already scan in either direction. Dropping it frees ~15-20 MB.
     "DROP INDEX IF EXISTS idx_daily_repo_date",

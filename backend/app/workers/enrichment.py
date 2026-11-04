@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.services.forecast_service import call_features, predict
 from app.services.github_service import github_service
 from app.services.trend_service import (
     acceleration,
@@ -19,6 +20,7 @@ from app.services.trend_service import (
     is_breakout_candidate,
     summarize_stargazers,
 )
+from app.workers.explainers import load_call_model
 
 logger = logging.getLogger(__name__)
 
@@ -128,14 +130,33 @@ async def update_lifecycles_and_calls(session: AsyncSession, today: date) -> Non
         called = {
             r[0] for r in (await session.execute(text("SELECT repository_id FROM breakout_calls"))).fetchall()
         }
+        # A jump made of brand-new, empty accounts isn't a breakout worth calling.
+        bought = {
+            r[0] for r in (
+                await session.execute(text("SELECT repository_id FROM star_quality WHERE verdict = 'suspicious'"))
+            ).fetchall()
+        }
+        model = await load_call_model(session)
+
+        def odds(r) -> float | None:
+            if not model:
+                return None
+            accel = acceleration(r["gain7"], r["prior_avg"])
+            return predict(model, call_features(accel, r["gain7"], r["stars"], r["age_days"]))
+
+        pool = [
+            r for r in rows
+            if r["id"] not in called
+            and r["id"] not in top_rank
+            and r["id"] not in bought
+            and is_breakout_candidate(r["gain7"], r["prior_avg"], r["age_days"], r["stars"])
+        ]
+        for r in pool:
+            r["prob"] = odds(r)
+        # With a model, call the likeliest; without one, the sharpest acceleration.
         candidates = sorted(
-            (
-                r for r in rows
-                if r["id"] not in called
-                and r["id"] not in top_rank
-                and is_breakout_candidate(r["gain7"], r["prior_avg"], r["age_days"], r["stars"])
-            ),
-            key=lambda r: acceleration(r["gain7"], r["prior_avg"]),
+            pool,
+            key=lambda r: r["prob"] if r["prob"] is not None else acceleration(r["gain7"], r["prior_avg"]),
             reverse=True,
         )[:room]
         for r in candidates:
@@ -143,14 +164,15 @@ async def update_lifecycles_and_calls(session: AsyncSession, today: date) -> Non
                 text(
                     """
                     INSERT INTO breakout_calls
-                        (repository_id, called_on, stars_at_call, gain7_at_call, accel)
-                    VALUES (:id, :today, :stars, :gain7, :accel)
+                        (repository_id, called_on, stars_at_call, gain7_at_call, accel, prob)
+                    VALUES (:id, :today, :stars, :gain7, :accel, :prob)
                     ON CONFLICT (repository_id) DO NOTHING
                     """
                 ),
                 {
                     "id": r["id"], "today": today, "stars": r["stars"], "gain7": r["gain7"],
                     "accel": round(min(acceleration(r["gain7"], r["prior_avg"]), 9999), 2),
+                    "prob": round(r["prob"], 3) if r["prob"] is not None else None,
                 },
             )
         logger.info("Breakout calls: %d new this run (%d already this week)", len(candidates), made)

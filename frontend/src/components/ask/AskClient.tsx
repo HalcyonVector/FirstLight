@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ask } from "@/lib/api";
 import { formatStat, formatDelta } from "@/lib/utils";
-import { AskBox, LifecycleChip } from "@/components/shared/Signals";
+import { AskBox, LifecycleChip, StarFlag, useStarChecks } from "@/components/shared/Signals";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { Sparkline } from "@/components/shared/Sparkline";
 import { useSparklines } from "@/hooks/useSparklines";
@@ -20,6 +20,7 @@ export function AskClient() {
     retry: false,
   });
   const sparks = useSparklines((data?.repos ?? []).map((r) => r.id));
+  const checks = useStarChecks((data?.repos ?? []).map((r) => r.id));
 
   return (
     <div className="fade-up">
@@ -58,6 +59,7 @@ export function AskClient() {
                     {r.full_name}
                     {r.language && <span className="lang">{r.language}</span>}
                     <LifecycleChip stage={r.lifecycle} />
+                    <StarFlag check={checks[String(r.id)]} />
                   </div>
                   <div className="ds">{r.description ?? "No description provided."}</div>
                 </div>

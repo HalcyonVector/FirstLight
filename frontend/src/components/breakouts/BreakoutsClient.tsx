@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCalls } from "@/lib/api";
-import type { BreakoutCall } from "@/lib/types";
+import type { BreakoutCall, CalibrationBin, CallsResponse, StarCheck } from "@/lib/types";
 import { formatStat, formatDelta } from "@/lib/utils";
 import { shortDate } from "@/components/shared/Charts";
 import { WatchButton } from "@/components/shared/WatchButton";
+import { OddsChip, StarFlag, useStarChecks } from "@/components/shared/Signals";
 import { Sparkline } from "@/components/shared/Sparkline";
 import { useSparklines } from "@/hooks/useSparklines";
 
@@ -26,6 +27,7 @@ export function BreakoutsClient() {
   const calls = (data?.calls ?? []).filter((c) => filter === "all" || c.status === filter);
   const resolved = rec ? rec.hits + rec.misses : 0;
   const sparks = useSparklines(calls.map((c) => c.id));
+  const checks = useStarChecks(calls.map((c) => c.id));
 
   return (
     <div className="fade-up">
@@ -37,6 +39,8 @@ export function BreakoutsClient() {
         Every refresh looks for small repositories (under 5k stars, under a year old) whose stars this
         week are at least 2.5× their own weekly average. Each one becomes a dated call. A call comes
         true if the repo reaches the weekly top {rec?.hit_rank ?? 25} within {rec?.window_days ?? 30} days.
+        Each call also gets odds from a model trained on every past breakout we tracked, and the odds are
+        scored too.
       </p>
 
       <div className="strip">
@@ -72,7 +76,7 @@ export function BreakoutsClient() {
       {isLoading ? (
         Array.from({ length: 5 }).map((_, i) => <div key={i} className="skel" style={{ height: 58, marginBottom: 10 }} />)
       ) : calls.length ? (
-        calls.map((c) => <CallRow key={c.id} c={c} spark={sparks[String(c.id)]} />)
+        calls.map((c) => <CallRow key={c.id} c={c} spark={sparks[String(c.id)]} check={checks[String(c.id)]} />)
       ) : (
         <div className="note">
           {data?.calls.length
@@ -80,6 +84,8 @@ export function BreakoutsClient() {
             : "No calls yet. The first ones appear after a few days of history, once a repo's weekly pace can be compared with its own baseline."}
         </div>
       )}
+
+      {data && <OddsReport data={data} />}
 
       <div className="foot">
         <div className="fb">Breakout calls</div>
@@ -89,16 +95,18 @@ export function BreakoutsClient() {
   );
 }
 
-function CallRow({ c, spark }: { c: BreakoutCall; spark?: number[] }) {
+function CallRow({ c, spark, check }: { c: BreakoutCall; spark?: number[]; check?: StarCheck }) {
   return (
     <Link className="lentry callrow" href={`/repos/${c.id}`}>
       <div className="rk">
         <span className={`callstat ${c.status}`}>{STATUS_LABEL[c.status]}</span>
+        <OddsChip prob={c.prob} />
       </div>
       <div>
         <div className="nm">
           {c.full_name}
           {c.language && <span className="lang">{c.language}</span>}
+          <StarFlag check={check} />
         </div>
         <div className="ds">
           Called {shortDate(c.called_on)} at {formatStat(c.stars_at_call)} stars, gaining{" "}
@@ -132,5 +140,94 @@ function CallRow({ c, spark }: { c: BreakoutCall; spark?: number[] }) {
         />
       </div>
     </Link>
+  );
+}
+
+/** Predicted vs. actual hit rate per odds band, as paired bars. */
+function CalibrationChart({ bins }: { bins: CalibrationBin[] }) {
+  return (
+    <div className="calib" role="table" aria-label="Predicted against actual hit rate">
+      {bins.map((b) => (
+        <div key={b.lo} className="calrow" role="row">
+          <span className="calband" role="cell">
+            {Math.round(b.lo * 100)}–{Math.round(b.hi * 100)}%
+          </span>
+          <span className="calbars" role="cell">
+            <span className="calbar pred" style={{ width: `${b.predicted}%` }} title={`Predicted ${b.predicted}%`} />
+            <span className="calbar act" style={{ width: `${b.actual}%` }} title={`Came true ${b.actual}%`} />
+          </span>
+          <span className="calnums" role="cell">
+            {b.predicted}% → <b>{b.actual}%</b> <em>({b.n})</em>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** How trustworthy the odds are: a backtest on history, then the live record as calls resolve. */
+function OddsReport({ data }: { data: CallsResponse }) {
+  const m = data.model;
+  const bt = m?.backtest;
+  const live = data.live_calibration;
+  const firstOpen = data.calls
+    .filter((c) => c.status === "open" && c.prob != null)
+    .map((c) => c.called_on)
+    .sort()[0];
+  const settles = firstOpen
+    ? shortDate(new Date(new Date(firstOpen).getTime() + (data.record.window_days + 1) * 86_400_000).toISOString())
+    : null;
+  return (
+    <>
+      <div className="rulehead">
+        How good are the odds? <span className="meta">scored like a weather forecast</span>
+      </div>
+      {!m ? (
+        <div className="note">
+          The odds model needs at least 40 past breakouts with known outcomes. It trains itself once the
+          history is there.
+        </div>
+      ) : (
+        <div className="oddsreport">
+          <p className="oddslead">
+            Trained on {formatStat(m.samples)} past breakouts, {m.base_rate}% of which reached the top list.
+            {bt && (
+              <>
+                {" "}On the most recent {bt.test_n} (held back from training), the model&apos;s top third came true{" "}
+                <b>{bt.top_third_rate}%</b> of the time, against {bt.base_rate}% for all of them.
+                {bt.skill != null && (
+                  <>
+                    {" "}Its accuracy score is{" "}
+                    <b>{bt.skill > 0 ? `${Math.round(bt.skill * 100)}% better` : `${Math.round(-bt.skill * 100)}% worse`}</b>{" "}
+                    than always guessing the average.
+                  </>
+                )}
+              </>
+            )}
+          </p>
+          {bt && bt.bins.length > 0 && (
+            <>
+              <div className="calhead">
+                Backtest · {shortDate(bt.test_from)} to {shortDate(bt.test_to)}
+                <span className="legend">
+                  <i className="pred" /> predicted <i className="act" /> came true
+                </span>
+              </div>
+              <CalibrationChart bins={bt.bins} />
+            </>
+          )}
+          <div className="calhead">Live calls</div>
+          {live && live.n > 0 ? (
+            <CalibrationChart bins={live.bins} />
+          ) : (
+            <p className="emptyline">
+              Live calls are scored here as they resolve
+              {settles ? `; the first ones with odds settle around ${settles}` : ""}. When the bars match, the
+              odds mean what they say.
+            </p>
+          )}
+        </div>
+      )}
+    </>
   );
 }

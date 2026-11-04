@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { Lifecycle } from "@/lib/types";
+import { useQuery } from "@tanstack/react-query";
+import { getStarChecks } from "@/lib/api";
+import type { Lifecycle, StarCheck } from "@/lib/types";
 import { readFollows, subscribeFollows, toggleFollow, type Follows } from "@/lib/follows";
 
 const STAGE_HELP: Record<Lifecycle, string> = {
@@ -18,6 +20,43 @@ export function LifecycleChip({ stage }: { stage?: Lifecycle | null }) {
   return (
     <span className={`stage ${stage}`} title={STAGE_HELP[stage]}>
       {stage}
+    </span>
+  );
+}
+
+/** Stargazer-sample verdicts for a set of repos (only the sampled ones come back). */
+export function useStarChecks(ids: number[]): Record<string, StarCheck> {
+  const key = [...ids].sort((a, b) => a - b).join(",");
+  const { data } = useQuery({
+    queryKey: ["star-checks", key],
+    queryFn: () => getStarChecks(ids),
+    enabled: ids.length > 0,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+  return data?.checks ?? {};
+}
+
+/** Warning chip for repos whose recent stargazers look bought. Renders nothing otherwise. */
+export function StarFlag({ check }: { check?: StarCheck }) {
+  if (!check || check.verdict !== "suspicious") return null;
+  return (
+    <span
+      className="starflag"
+      title={`${check.pct_new}% of recent stargazers are brand-new accounts, ${check.pct_empty}% have no repos or followers`}
+    >
+      stars look bought
+    </span>
+  );
+}
+
+/** Odds a breakout call comes true, as a small pill. */
+export function OddsChip({ prob }: { prob?: number | null }) {
+  if (prob == null) return null;
+  const pct = Math.round(prob * 100);
+  return (
+    <span className={`odds ${pct >= 50 ? "hi" : pct >= 25 ? "mid" : "lo"}`} title="Model's odds this call reaches the weekly top list within 30 days">
+      {pct}% odds
     </span>
   );
 }

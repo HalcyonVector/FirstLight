@@ -54,6 +54,33 @@ export interface RepoBreakoutCall {
   status: "open" | "hit" | "miss";
   hit_on: string | null;
   best_rank: number | null;
+  /** 0-1 odds the call comes true, when the model existed at call time. */
+  prob?: number | null;
+}
+
+export interface SpikeCause {
+  kind: "hn" | "release";
+  title: string;
+  url: string | null;
+  at: string | null;
+  points?: number | null;
+  comments?: number | null;
+}
+
+export interface StarSpike {
+  date: string;
+  gain: number;
+  baseline: number;
+  causes: SpikeCause[];
+}
+
+export interface HypeCurve {
+  peak_on: string;
+  peak_gain7: number;
+  now_gain7: number;
+  half_on: string | null;
+  commits_peak: number;
+  commits_now: number;
 }
 
 export interface DailyMetric {
@@ -104,6 +131,8 @@ export interface RepoDetail extends RepoCard {
   star_quality?: StarQuality | null;
   releases?: Release[];
   breakout_call?: RepoBreakoutCall | null;
+  spikes?: StarSpike[];
+  hype?: HypeCurve | null;
 }
 
 export interface MomentumBreakdown {
@@ -212,6 +241,7 @@ export interface BreakoutCall {
   hit_on: string | null;
   best_rank: number | null;
   lead_days: number | null;
+  prob?: number | null;
 }
 
 export interface CallRecord {
@@ -225,9 +255,78 @@ export interface CallRecord {
   window_days: number;
 }
 
+export interface CalibrationBin {
+  lo: number;
+  hi: number;
+  n: number;
+  predicted: number;
+  actual: number;
+}
+
+export interface CallBacktest {
+  test_n: number;
+  test_from: string;
+  test_to: string;
+  bins: CalibrationBin[];
+  brier: number;
+  brier_base: number;
+  skill: number | null;
+  base_rate: number;
+  top_third_rate: number;
+}
+
+export interface CallModelInfo {
+  trained_on: string;
+  samples: number;
+  positives: number;
+  base_rate: number;
+  backtest: CallBacktest | null;
+}
+
 export interface CallsResponse {
   calls: BreakoutCall[];
   record: CallRecord;
+  live_calibration?: { n: number; bins: CalibrationBin[]; brier: number | null };
+  model?: CallModelInfo | null;
+}
+
+export interface ExplainedSpike extends StarSpike {
+  id: number;
+  full_name: string;
+  name: string;
+  language: string | null;
+}
+
+export interface HypeSummary {
+  n: number;
+  fade_days: number | null;
+  holding_pct: number;
+  building_pct: number | null;
+}
+
+export interface HypeData {
+  as_of: string | null;
+  overall: HypeSummary | null;
+  categories: (HypeSummary & { slug: string; name: string })[];
+}
+
+export interface StarCheck {
+  verdict: "organic" | "mixed" | "suspicious";
+  pct_new: number;
+  pct_empty: number;
+}
+
+export interface ForUserRepo extends RepoCard {
+  shared_topics: string[];
+  like: string | null;
+}
+
+export interface ForUserResult {
+  login: string;
+  starred: number;
+  topics: string[];
+  languages: string[];
+  repos: ForUserRepo[];
 }
 
 // ─── Digest (This Week) ──────────────────────────────────────────────────────

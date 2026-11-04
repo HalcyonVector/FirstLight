@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.services.forecast_service import brier, calibration_bins
 
 # One query shape for both sections. The LATERAL joins pull the freshest daily
 # metric (commit / contributor activity, for the hype-vs-substance signal) and
@@ -118,7 +119,7 @@ async def call_record(session: AsyncSession) -> dict:
             text(
                 """
                 SELECT c.repository_id AS id, c.called_on, c.stars_at_call, c.gain7_at_call,
-                       c.accel, c.hit_on, c.best_rank,
+                       c.accel, c.hit_on, c.best_rank, c.prob,
                        r.full_name, r.description, r.language, r.latest_stars,
                        r.stars_gained_week, r.momentum_score
                 FROM breakout_calls c
@@ -130,6 +131,7 @@ async def call_record(session: AsyncSession) -> dict:
     ).fetchall()
     today = datetime.now(timezone.utc).date()
     calls, hits, misses, leads = [], 0, 0, []
+    scored: list[tuple[float, int]] = []  # (odds, came true) for resolved calls that had odds
     for r in rows:
         if r.hit_on:
             status = "hit"
@@ -140,6 +142,8 @@ async def call_record(session: AsyncSession) -> dict:
             misses += 1
         else:
             status = "open"
+        if status != "open" and r.prob is not None:
+            scored.append((float(r.prob), int(status == "hit")))
         calls.append({
             "id": r.id,
             "full_name": r.full_name,
@@ -156,6 +160,7 @@ async def call_record(session: AsyncSession) -> dict:
             "hit_on": r.hit_on,
             "best_rank": r.best_rank,
             "lead_days": (r.hit_on - r.called_on).days if r.hit_on else None,
+            "prob": float(r.prob) if r.prob is not None else None,
         })
     resolved = hits + misses
     return {
@@ -169,5 +174,10 @@ async def call_record(session: AsyncSession) -> dict:
             "avg_lead_days": round(sum(leads) / len(leads), 1) if leads else None,
             "hit_rank": settings.CALL_HIT_RANK,
             "window_days": settings.CALL_WINDOW_DAYS,
+        },
+        "live_calibration": {
+            "n": len(scored),
+            "bins": calibration_bins([p for p, _ in scored], [y for _, y in scored]),
+            "brier": brier([p for p, _ in scored], [y for _, y in scored]),
         },
     }

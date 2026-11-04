@@ -342,6 +342,51 @@ async def _enrichment(db: AsyncSession, repo_id: int) -> dict:
             "called_on": row.called_on, "stars_at_call": row.stars_at_call,
             "status": status, "hit_on": row.hit_on, "best_rank": row.best_rank,
         }
+    out.update(await _explained(db, repo_id, out.get("breakout_call")))
+    return out
+
+
+async def _explained(db: AsyncSession, repo_id: int, call: dict | None) -> dict:
+    """Star spikes with their causes, the hype curve, and the call's odds."""
+    try:
+        spikes = (
+            await db.execute(
+                text(
+                    """
+                    SELECT spike_date, gain, baseline, causes FROM star_spikes
+                    WHERE repository_id = :rid ORDER BY spike_date DESC LIMIT 6
+                    """
+                ),
+                {"rid": repo_id},
+            )
+        ).fetchall()
+        hype = (
+            await db.execute(
+                text(
+                    """
+                    SELECT peak_on, peak_gain7, now_gain7, half_on, commits_peak, commits_now
+                    FROM hype_curves WHERE repository_id = :rid
+                    """
+                ),
+                {"rid": repo_id},
+            )
+        ).fetchone()
+        prob = (
+            await db.execute(text("SELECT prob FROM breakout_calls WHERE repository_id = :rid"), {"rid": repo_id})
+        ).scalar() if call else None
+    except Exception:  # noqa: BLE001 -- tables not created yet
+        await db.rollback()
+        return {}
+    out: dict = {
+        "spikes": [
+            {"date": s.spike_date, "gain": s.gain, "baseline": s.baseline, "causes": s.causes or []}
+            for s in spikes
+        ],
+    }
+    if hype:
+        out["hype"] = dict(hype._mapping)
+    if call is not None and prob is not None:
+        call["prob"] = float(prob)
     return out
 
 

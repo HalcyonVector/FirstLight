@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import AsyncSessionLocal  # noqa: E402
 from app.core.schema_upgrade import ensure_schema, storage_report  # noqa: E402
-from app.workers import enrichment  # noqa: E402
+from app.workers import enrichment, explainers  # noqa: E402
 from app.workers.ingestion import (  # noqa: E402
     _aggregate_snapshots,
     _compute_trend_scores,
@@ -38,9 +38,13 @@ async def _enrich() -> None:
     """Post-scoring steps. One failing step must not cost the others."""
     today = date.today()
     steps = [
+        ("call odds model (daily)", lambda s: explainers.train_call_model(s, today)),
         ("lifecycle stages + breakout calls", lambda s: enrichment.update_lifecycles_and_calls(s, today)),
         ("releases", enrichment.fetch_releases),
         ("stargazer samples", enrichment.sample_star_quality),
+        ("star spikes", lambda s: explainers.detect_spikes(s, today)),
+        ("spike causes (Hacker News, releases)", lambda s: explainers.explain_spikes(s, today)),
+        ("hype curves (daily)", lambda s: explainers.update_hype_curves(s, today)),
         ("retention", lambda s: enrichment.prune(s, today)),
     ]
     for label, step in steps:

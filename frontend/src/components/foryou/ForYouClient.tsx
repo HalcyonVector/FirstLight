@@ -8,6 +8,7 @@ import { formatDelta, relativeTime } from "@/lib/utils";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { FollowChip, useFollows } from "@/components/shared/Signals";
 import { WatchButton } from "@/components/shared/WatchButton";
+import { StarsRadar } from "./StarsRadar";
 
 export function ForYouClient() {
   const follows = useFollows();
@@ -50,9 +51,11 @@ export function ForYouClient() {
         Your <span className="ember">corner</span> of GitHub.
       </h1>
       <p className="standfirst">
-        Follow the categories and languages you care about. Your watchlist and its latest releases sit
-        at the top.
+        Match rising repos to your own GitHub stars, or follow the categories and languages you care
+        about. Your watchlist and its latest releases sit below.
       </p>
+
+      <StarsRadar />
 
       <div className="rulehead">
         Follow categories <span className="meta">{follows.categories.length} followed</span>

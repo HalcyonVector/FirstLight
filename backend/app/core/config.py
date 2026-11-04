@@ -118,6 +118,15 @@ class Settings(BaseSettings):
     ASK_MODEL: str = "openai/gpt-oss-20b"
     ASK_DAILY_LIMIT: int = 150            # LLM-parsed questions per day; beyond this, keyword parsing only
 
+    # Explained spikes: Hacker News search (free, no key) for the fastest movers.
+    SPIKE_TOP_N: int = 60                 # repos scanned for spikes per run (by weekly stars)
+    SPIKE_EXPLAIN_MAX: int = 40           # spikes looked up per run (1-2 HN queries each)
+    SPIKE_RETENTION_DAYS: int = 90
+    # Hype half-life is recomputed once a day from daily_metrics.
+    # GitHub-stars radar: up to 3 GitHub calls per lookup, cached, capped per day.
+    RADAR_DAILY_LIMIT: int = 200
+    RADAR_CACHE_TTL: int = 21600
+
 
 @lru_cache
 def get_settings() -> Settings:

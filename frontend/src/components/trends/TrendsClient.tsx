@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getRadar } from "@/lib/api";
 import type { RadarCategory } from "@/lib/types";
 import { formatDelta } from "@/lib/utils";
+import { HypeTable } from "./HypeTable";
 
 type Status = "rising" | "stable" | "declining";
 
@@ -84,6 +85,8 @@ export function TrendsClient() {
       ) : (
         <div className="note">No trend data yet — categories appear once snapshots are computed.</div>
       )}
+
+      <HypeTable />
 
       <div className="foot">
         <div className="fb">{all.length} categories</div>
