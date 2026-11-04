@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getRepository, getRepositoryMetrics, getSimilarRepos } from "@/lib/api";
 import { addRecentRepo } from "@/lib/recent";
-import type { DailyMetric, HypeCurve, MomentumBreakdown, RepoDetail, StarQuality, StarSpike } from "@/lib/types";
+import type { DailyMetric, HypeCurve, MomentumBreakdown, RepoDetail, RepoStarCheck, StarSpike } from "@/lib/types";
 import { formatStat, formatDelta, getLanguageColor, relativeTime } from "@/lib/utils";
 import { parseCompetitors } from "@/lib/chart";
 import { WatchButton } from "@/components/shared/WatchButton";
@@ -204,7 +204,7 @@ export function RepoDetailClient({ id }: { id: number }) {
             <ScoreBreakdown b={repo.momentum_breakdown} score={repo.momentum_score} />
           )}
           {repo.hype && <AfterTheHype h={repo.hype} />}
-          {repo.star_quality && <StarCheck q={repo.star_quality} />}
+          {repo.star_check && <StarCheck q={repo.star_check} />}
           {(repo.releases?.length ?? 0) > 0 && <Releases repo={repo} />}
         </div>
 
@@ -473,38 +473,35 @@ function AfterTheHype({ h }: { h: HypeCurve }) {
   );
 }
 
-const STAR_VERDICT: Record<StarQuality["verdict"], string> = {
-  organic: "Looks organic",
-  mixed: "Mixed signals",
-  suspicious: "Looks inflated",
+const STAR_VERDICT: Record<RepoStarCheck["verdict"], string> = {
+  organic: "Forks keep pace",
+  mixed: "Few forks for its stars",
+  suspicious: "Stars without forks",
 };
 
-/** Result of sampling the most recent stargazers (account age and activity). */
-function StarCheck({ q }: { q: StarQuality }) {
+/** This week's forks per star, against the typical fast-growing repo's. */
+function StarCheck({ q }: { q: RepoStarCheck }) {
+  const ratio = q.stars_week > 0 ? q.forks_week / q.stars_week : 0;
+  const rel = q.typical_ratio > 0 ? Math.round((100 * ratio) / q.typical_ratio) : 0;
+  const per = (r: number) => (r > 0 ? `1 fork per ${Math.round(1 / r)} stars` : "no forks");
   return (
     <div className="chartcard" style={{ marginTop: 22 }}>
       <h4>
-        Star check <span>{relativeTime(q.sampled_at)}</span>
+        Star check <span>this week</span>
       </h4>
       <div className={`starverdict ${q.verdict}`}>{STAR_VERDICT[q.verdict]}</div>
       <div className="bdrow">
-        <span className="bdl">New accounts</span>
+        <span className="bdl">Forks vs typical</span>
         <span className="bdbar">
-          <i style={{ width: `${q.pct_new}%` }} />
+          <i style={{ width: `${Math.min(100, rel)}%` }} />
         </span>
-        <span className="bdv">{q.pct_new}%</span>
-      </div>
-      <div className="bdrow">
-        <span className="bdl">Empty accounts</span>
-        <span className="bdbar">
-          <i style={{ width: `${q.pct_empty}%` }} />
-        </span>
-        <span className="bdv">{q.pct_empty}%</span>
+        <span className="bdv">{rel}%</span>
       </div>
       <p className="sigwhy">
-        From the {q.sample_size} most recent stargazers. New means the account was under 30 days old
-        when it starred; empty means no followers and no public repos. Bought stars usually come from
-        accounts like these.
+        {formatStat(q.stars_week)} stars and {formatStat(q.forks_week)} forks this week, {per(ratio)}. Fast-growing
+        repos usually get {per(q.typical_ratio)}. Bought stars rarely come with forks, so a big gap is a warning
+        sign, not proof. (GitHub stopped publishing who starred a repo in June 2026, so this is the check that
+        remains.)
       </p>
     </div>
   );

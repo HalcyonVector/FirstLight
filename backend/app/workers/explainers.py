@@ -178,9 +178,6 @@ WITH d AS (
 ranked AS (
     SELECT d.*, RANK() OVER (PARTITION BY d.date ORDER BY d.gain7 DESC) AS rk FROM d
 ),
-top AS (
-    SELECT rid, date FROM ranked WHERE rk <= CAST(:hit_rank AS INTEGER)
-),
 cand AS (
     SELECT DISTINCT ON (k.rid)
            k.rid, k.date, k.gain7, k.stars_total,
@@ -197,11 +194,11 @@ cand AS (
       AND k.date <= (SELECT MAX(date) FROM daily_metrics) - CAST(:window AS INTEGER)
     ORDER BY k.rid, k.date
 )
-SELECT c.rid, c.date, c.gain7, c.stars_total, c.accel, c.age,
-       EXISTS (SELECT 1 FROM top t
-               WHERE t.rid = c.rid AND t.date > c.date
-                 AND t.date <= c.date + CAST(:window AS INTEGER)) AS hit
+SELECT c.rid, c.date, c.gain7, c.stars_total, c.accel, c.age, MIN(l.rk) AS best_rank
 FROM cand c
+LEFT JOIN ranked l
+  ON l.rid = c.rid AND l.date > c.date AND l.date <= c.date + CAST(:window AS INTEGER)
+GROUP BY c.rid, c.date, c.gain7, c.stars_total, c.accel, c.age
 """
 
 
@@ -226,9 +223,16 @@ async def train_call_model(session: AsyncSession, today: date) -> None:
     ).fetchall()
     samples = [
         {"date": r.date, "accel": float(r.accel), "gain7": int(r.gain7), "stars": int(r.stars_total),
-         "age": int(r.age), "hit": bool(r.hit)}
+         "age": int(r.age), "hit": r.best_rank is not None and r.best_rank <= settings.CALL_HIT_RANK}
         for r in rows
     ]
+    if samples:
+        rates = ", ".join(
+            f"top {n}: {sum(1 for r in rows if r.best_rank is not None and r.best_rank <= n)}"
+            for n in (25, 50, 100, 200)
+        )
+        logger.info("Call odds: %d past breakouts reached %s (hit bar is top %d)",
+                    len(samples), rates, settings.CALL_HIT_RANK)
     result = train_and_backtest(samples)
     if result is None:
         logger.info(

@@ -4,7 +4,6 @@ from app.services.trend_service import (
     acceleration,
     classify_lifecycle,
     is_breakout_candidate,
-    summarize_stargazers,
 )
 
 
@@ -40,22 +39,14 @@ def test_breakout_candidate_rules():
     assert not is_breakout_candidate(400, None, age_days=60, total_stars=1500)  # no history
 
 
-def test_stargazers_organic_and_suspicious():
-    organic = [{"account_age_days": 900, "followers": 5, "repos": 10}] * 95 + [
-        {"account_age_days": 3, "followers": 0, "repos": 0}
-    ] * 5
-    assert summarize_stargazers(organic)["verdict"] == "organic"
+def test_star_activity_flags_stars_that_arrive_without_forks():
+    from app.services.forecast_service import activity_verdict
 
-    farmed = [{"account_age_days": 2, "followers": 0, "repos": 0}] * 60 + [
-        {"account_age_days": 900, "followers": 5, "repos": 10}
-    ] * 40
-    s = summarize_stargazers(farmed)
-    assert s["verdict"] == "suspicious"
-    assert s["pct_new"] == 60 and s["sample_size"] == 100
-
-
-def test_stargazers_empty_sample():
-    assert summarize_stargazers([]) is None
+    typical = 0.11  # median forks per star among fast growers
+    assert activity_verdict(6000, 700, typical) == "organic"
+    assert activity_verdict(5800, 268, typical) == "mixed"       # 0.046, under half the norm
+    assert activity_verdict(11813, 298, typical) == "suspicious"  # 0.025, a quarter of the norm
+    assert activity_verdict(0, 0, typical) == "organic"
 
 
 def test_frontend_urls_accepts_a_comma_separated_list():

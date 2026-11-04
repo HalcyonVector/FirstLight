@@ -37,15 +37,18 @@ export function useStarChecks(ids: number[]): Record<string, StarCheck> {
   return data?.checks ?? {};
 }
 
-/** Warning chip for repos whose recent stargazers look bought. Renders nothing otherwise. */
+/** Warning chip for repos gaining stars far faster than forks. Renders nothing otherwise. */
 export function StarFlag({ check }: { check?: StarCheck }) {
   if (!check || check.verdict !== "suspicious") return null;
+  const typical = check.typical_ratio > 0 ? Math.round(1 / check.typical_ratio) : null;
   return (
     <span
       className="starflag"
-      title={`${check.pct_new}% of recent stargazers are brand-new accounts, ${check.pct_empty}% have no repos or followers`}
+      title={`${check.stars_week.toLocaleString()} stars but ${check.forks_week.toLocaleString()} forks this week${
+        typical ? `; fast-growing repos usually get 1 fork per ${typical} stars` : ""
+      }`}
     >
-      stars look bought
+      stars without forks
     </span>
   );
 }

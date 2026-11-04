@@ -1,24 +1,24 @@
 """
 Pipeline steps that run after scoring: lifecycle stages, breakout calls,
-releases, stargazer sampling and retention. Each step is independent and
+releases, the star activity check and retention. Each step is independent and
 best-effort; refresh.py runs them in order and logs failures without stopping.
 """
 
 import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
+from statistics import median
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services.forecast_service import call_features, predict
+from app.services.forecast_service import activity_verdict, call_features, predict
 from app.services.github_service import github_service
 from app.services.trend_service import (
     acceleration,
     classify_lifecycle,
     is_breakout_candidate,
-    summarize_stargazers,
 )
 from app.workers.explainers import load_call_model
 
@@ -130,10 +130,10 @@ async def update_lifecycles_and_calls(session: AsyncSession, today: date) -> Non
         called = {
             r[0] for r in (await session.execute(text("SELECT repository_id FROM breakout_calls"))).fetchall()
         }
-        # A jump made of brand-new, empty accounts isn't a breakout worth calling.
+        # Stars arriving without the forks real interest brings aren't a breakout worth calling.
         bought = {
             r[0] for r in (
-                await session.execute(text("SELECT repository_id FROM star_quality WHERE verdict = 'suspicious'"))
+                await session.execute(text("SELECT repository_id FROM star_activity WHERE verdict = 'suspicious'"))
             ).fetchall()
         }
         model = await load_call_model(session)
@@ -224,49 +224,52 @@ async def fetch_releases(session: AsyncSession) -> None:
     logger.info("Releases: %d rows from %d repos", len(rows), len(targets))
 
 
-async def sample_star_quality(session: AsyncSession) -> None:
-    """Sample recent stargazers of the fastest-starred repos not checked lately."""
-    targets = (
+async def check_star_activity(session: AsyncSession) -> None:
+    """
+    For every repo gaining STAR_CHECK_MIN_WEEK+ stars this week, compare its
+    forks per star with the typical fast grower's (the median this week).
+    """
+    rows = (
         await session.execute(
             text(
                 """
-                SELECT r.id, r.owner, r.name FROM repositories r
-                LEFT JOIN star_quality q ON q.repository_id = r.id
-                WHERE r.is_archived = FALSE
-                  AND r.stars_gained_week >= :min_week
-                  AND (q.sampled_at IS NULL OR q.sampled_at < NOW() - (:every * INTERVAL '1 day'))
-                ORDER BY r.stars_gained_week DESC
-                LIMIT :n
+                WITH latest AS (SELECT MAX(date) AS d FROM daily_metrics)
+                SELECT now.repository_id AS rid,
+                       now.stars_total - prev.stars_total AS stars_week,
+                       GREATEST(now.forks_total - prev.forks_total, 0) AS forks_week
+                FROM daily_metrics now
+                JOIN latest ON now.date = latest.d
+                JOIN daily_metrics prev
+                  ON prev.repository_id = now.repository_id AND prev.date = latest.d - 7
+                WHERE now.stars_total - prev.stars_total >= :min_week
                 """
             ),
-            {
-                "min_week": settings.STAR_SAMPLE_MIN_WEEK,
-                "every": settings.STAR_SAMPLE_EVERY_DAYS,
-                "n": settings.STAR_SAMPLE_TOP_N,
-            },
+            {"min_week": settings.STAR_CHECK_MIN_WEEK},
         )
     ).fetchall()
-    done = 0
-    for t in targets:
-        summary = summarize_stargazers(await github_service.sample_stargazers(t.owner, t.name))
-        if not summary:
-            continue
+    await session.execute(text("DELETE FROM star_activity"))
+    if rows:
+        typical = median(r.forks_week / r.stars_week for r in rows)
+        today = date.today()
+        checks = [
+            {"rid": r.rid, "d": today, "s": int(r.stars_week), "f": int(r.forks_week),
+             "t": round(typical, 4), "v": activity_verdict(r.stars_week, r.forks_week, typical)}
+            for r in rows
+        ]
         await session.execute(
             text(
                 """
-                INSERT INTO star_quality (repository_id, sampled_at, sample_size, pct_new, pct_empty, verdict)
-                VALUES (:rid, NOW(), :sample_size, :pct_new, :pct_empty, :verdict)
-                ON CONFLICT (repository_id) DO UPDATE
-                SET sampled_at = NOW(), sample_size = EXCLUDED.sample_size,
-                    pct_new = EXCLUDED.pct_new, pct_empty = EXCLUDED.pct_empty,
-                    verdict = EXCLUDED.verdict
+                INSERT INTO star_activity
+                    (repository_id, checked_on, stars_week, forks_week, typical_ratio, verdict)
+                VALUES (:rid, :d, :s, :f, :t, :v)
                 """
             ),
-            {"rid": t.id, **summary},
+            checks,
         )
-        done += 1
+        flagged = sum(1 for c in checks if c["v"] == "suspicious")
+        logger.info("Star activity: %d repos checked, typical %.3f forks per star, %d flagged",
+                    len(checks), typical, flagged)
     await session.commit()
-    logger.info("Star quality sampled for %d of %d repos", done, len(targets))
 
 
 async def prune(session: AsyncSession, today: date) -> None:

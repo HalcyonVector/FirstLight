@@ -40,13 +40,6 @@ export interface Release {
   snippet: string | null;
 }
 
-export interface StarQuality {
-  sampled_at: string;
-  sample_size: number;
-  pct_new: number;
-  pct_empty: number;
-  verdict: "organic" | "mixed" | "suspicious";
-}
 
 export interface RepoBreakoutCall {
   called_on: string;
@@ -128,7 +121,7 @@ export interface RepoDetail extends RepoCard {
   last_synced_at: string | null;
   latest_insight: Insight | null;
   momentum_breakdown?: MomentumBreakdown | null;
-  star_quality?: StarQuality | null;
+  star_check?: RepoStarCheck | null;
   releases?: Release[];
   breakout_call?: RepoBreakoutCall | null;
   spikes?: StarSpike[];
@@ -310,10 +303,16 @@ export interface HypeData {
   categories: (HypeSummary & { slug: string; name: string })[];
 }
 
+/** This week's forks per star against the typical fast grower's (GitHub hides stargazer lists). */
 export interface StarCheck {
   verdict: "organic" | "mixed" | "suspicious";
-  pct_new: number;
-  pct_empty: number;
+  stars_week: number;
+  forks_week: number;
+  typical_ratio: number;
+}
+
+export interface RepoStarCheck extends StarCheck {
+  checked_on: string;
 }
 
 export interface ForUserRepo extends RepoCard {

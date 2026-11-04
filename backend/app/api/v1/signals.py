@@ -153,7 +153,7 @@ async def get_hype(db: AsyncSession = Depends(get_db)):
 
 @router.get("/star-checks")
 async def get_star_checks(ids: str = Query(..., max_length=2000), db: AsyncSession = Depends(get_db)):
-    """Stargazer-sample verdicts for a set of repos (only those that were sampled)."""
+    """Star activity verdicts for a set of repos (only fast growers are checked)."""
     try:
         id_list = [int(x) for x in ids.split(",") if x.strip()][:100]
     except ValueError:
@@ -163,15 +163,21 @@ async def get_star_checks(ids: str = Query(..., max_length=2000), db: AsyncSessi
     try:
         rows = (
             await db.execute(
-                text("SELECT repository_id, verdict, pct_new, pct_empty FROM star_quality WHERE repository_id = ANY(:ids)"),
+                text(
+                    "SELECT repository_id, verdict, stars_week, forks_week, typical_ratio "
+                    "FROM star_activity WHERE repository_id = ANY(:ids)"
+                ),
                 {"ids": id_list},
             )
         ).fetchall()
     except Exception:  # noqa: BLE001
         await db.rollback()
         rows = []
-    return {"checks": {str(r.repository_id): {"verdict": r.verdict, "pct_new": r.pct_new,
-                                               "pct_empty": r.pct_empty} for r in rows}}
+    return {"checks": {
+        str(r.repository_id): {"verdict": r.verdict, "stars_week": r.stars_week, "forks_week": r.forks_week,
+                               "typical_ratio": float(r.typical_ratio)}
+        for r in rows
+    }}
 
 
 _LOGIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$")
