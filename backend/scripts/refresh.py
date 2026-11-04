@@ -9,6 +9,7 @@ get from chaining multiple asyncio.run(...) calls.
 """
 
 import asyncio
+import logging
 import os
 import sys
 from datetime import date
@@ -28,6 +29,10 @@ from app.workers.ingestion import (  # noqa: E402
 )
 
 FREE_TIER_BYTES = 500 * 1024 * 1024  # Supabase free plan
+
+# Show the pipeline's own step summaries ("Spikes: 6 found…"); keep libraries at warnings.
+logging.basicConfig(level=logging.WARNING, format="    %(message)s")
+logging.getLogger("app").setLevel(logging.INFO)
 
 
 def _mb(n: int) -> str:

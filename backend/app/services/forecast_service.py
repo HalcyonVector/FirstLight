@@ -44,8 +44,43 @@ def find_spikes(days: list[tuple[date, int]], today: date) -> list[dict]:
     return sorted(kept, key=lambda s: s["date"])
 
 
-def matches_repo(hit: dict, owner: str, name: str, homepage_host: str | None) -> bool:
-    """Whether a Hacker News story is about this repo (its URL or title names it)."""
+HN_MIN_POINTS = 20  # a story with fewer points didn't cause a jump of 150+ stars
+
+# Sites where a bare domain says nothing about which project a link is for.
+SHARED_HOSTS = {
+    "arxiv.org", "youtube.com", "youtu.be", "medium.com", "x.com", "twitter.com", "huggingface.co",
+    "discord.gg", "discord.com", "npmjs.com", "pypi.org", "crates.io", "reddit.com", "substack.com",
+    "notion.so", "notion.site", "vercel.app", "netlify.app", "readthedocs.io", "gitbook.io",
+    "linkedin.com", "producthunt.com", "google.com", "docs.google.com", "colab.research.google.com",
+}
+
+
+def _url_key(url: str) -> str:
+    """host/path, lowercased, without scheme, www. or trailing slash."""
+    u = re.sub(r"^[a-z]+://", "", (url or "").strip().lower())
+    u = u.removeprefix("www.")
+    return re.split(r"[?#]", u, maxsplit=1)[0].rstrip("/")
+
+
+def homepage_key(url: str | None) -> str | None:
+    """
+    What a story's URL must start with to be about this repo's homepage, or None
+    when the homepage can't identify the project (GitHub itself, or a bare shared
+    site such as arxiv.org with no path).
+    """
+    key = _url_key(url or "")
+    if not key or "." not in key.split("/")[0]:
+        return None
+    host, _, path = key.partition("/")
+    if host == "github.com" or host.endswith(".github.com"):
+        return None
+    if not path and (host in SHARED_HOSTS or any(host.endswith("." + h) for h in SHARED_HOSTS)):
+        return None
+    return key
+
+
+def matches_repo(hit: dict, owner: str, name: str, homepage: str | None) -> bool:
+    """Whether a Hacker News story is about this repo: its GitHub URL, its title, or its homepage."""
     # owner/name as a whole token, so foo/bar doesn't match foo/barista
     full = re.compile(rf"(?<![\w.-]){re.escape(owner)}/{re.escape(name)}(?![\w.-])", re.IGNORECASE)
     url = hit.get("url") or ""
@@ -53,7 +88,10 @@ def matches_repo(hit: dict, owner: str, name: str, homepage_host: str | None) ->
         return True
     if full.search(hit.get("title") or ""):
         return True
-    return bool(homepage_host) and homepage_host in url.lower()
+    if not homepage:
+        return False
+    key = _url_key(url)
+    return key == homepage or key.startswith(homepage + "/")
 
 
 # ---------------------------------------------------------------- call odds

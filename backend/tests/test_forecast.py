@@ -9,6 +9,7 @@ from app.services.forecast_service import (
     calibration_bins,
     closest_starred,
     find_spikes,
+    homepage_key,
     hype_curve,
     hype_summary,
     matches_repo,
@@ -47,7 +48,21 @@ def test_find_spikes_needs_history_and_recency():
 def test_matches_repo_by_url_title_or_homepage():
     assert matches_repo({"url": "https://github.com/Foo/Bar", "title": "x"}, "foo", "bar", None)
     assert matches_repo({"url": "", "title": "Show HN: foo/bar, a thing"}, "foo", "bar", None)
-    assert matches_repo({"url": "https://bar.dev/blog", "title": "Bar"}, "foo", "bar", "bar.dev")
+    assert matches_repo({"url": "https://www.bar.dev/blog", "title": "Bar"}, "foo", "bar", "bar.dev")
+    assert not matches_repo({"url": "https://bar.dev.evil.com", "title": "x"}, "foo", "bar", "bar.dev")
+
+
+def test_homepage_on_a_shared_site_only_matches_its_own_page():
+    paper = homepage_key("http://arxiv.org/abs/2604.26962")
+    assert paper == "arxiv.org/abs/2604.26962"
+    other = {"url": "https://arxiv.org/abs/2501.00001", "title": "Attention Is Not What You Need"}
+    assert not matches_repo(other, "HKUDS", "DeepTutor", paper)
+    assert matches_repo({"url": "https://arxiv.org/abs/2604.26962v2", "title": "x"}, "a", "b", paper) is False
+    assert matches_repo({"url": "https://arxiv.org/abs/2604.26962", "title": "x"}, "a", "b", paper)
+    assert homepage_key("https://huggingface.co") is None  # bare shared site
+    assert homepage_key("https://github.com/foo/bar") is None
+    assert homepage_key("https://www.claude-mem.ai/") == "claude-mem.ai"
+    assert homepage_key("") is None and homepage_key(None) is None
     assert matches_repo({"url": "https://github.com/foo/bar/tree/main", "title": "x"}, "foo", "bar", None)
     assert not matches_repo({"url": "https://github.com/foo/barista", "title": "foo/barista"}, "foo", "bar", None)
     assert not matches_repo({"url": "https://example.com", "title": "unrelated"}, "foo", "bar", None)
