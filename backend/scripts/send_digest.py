@@ -39,11 +39,12 @@ GAIN_BG = "#e7f6ec"
 PILL = "#f1f3f5"
 BLUE = "#2563eb"
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-DEFAULT_SITE = "https://git-hub-trending-intelligence.vercel.app"
+DEFAULT_SITE = "https://firstlight-oss.vercel.app"
 
 
 def _site() -> str:
-    return (settings.FRONTEND_URL or DEFAULT_SITE).rstrip("/")
+    urls = settings.frontend_urls
+    return urls[0] if urls else DEFAULT_SITE
 
 
 _signal = signal

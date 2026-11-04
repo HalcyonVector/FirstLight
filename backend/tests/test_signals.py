@@ -56,3 +56,11 @@ def test_stargazers_organic_and_suspicious():
 
 def test_stargazers_empty_sample():
     assert summarize_stargazers([]) is None
+
+
+def test_frontend_urls_accepts_a_comma_separated_list():
+    from app.core.config import Settings
+
+    s = Settings(FRONTEND_URL=" https://new.vercel.app/ , https://old.vercel.app,")
+    assert s.frontend_urls == ["https://new.vercel.app", "https://old.vercel.app"]
+    assert Settings(FRONTEND_URL="").frontend_urls == []

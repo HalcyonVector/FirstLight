@@ -29,6 +29,6 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
-          FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://git-hub-trending-intelligence.vercel.app' }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://firstlight-oss.vercel.app' }}
           ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM || 'FirstLight <onboarding@resend.dev>' }}
         run: python scripts/send_digest.py

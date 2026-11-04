@@ -101,7 +101,7 @@ Then go to the **Actions** tab → **refresh-data** → **Run workflow** to do t
 3. Add an environment variable:
    - `NEXT_PUBLIC_API_URL` = your Render URL from step 4 (e.g. `https://gti-api.onrender.com`, no trailing slash)
 4. **Deploy**. You'll get a URL like `https://your-app.vercel.app`.
-5. Back in **Render → gti-api → Environment**, set `FRONTEND_URL` to that Vercel URL and save (it redeploys). This lets the browser call the API (CORS).
+5. Back in **Render → gti-api → Environment**, set `FRONTEND_URL` to that Vercel URL and save (it redeploys). This lets the browser call the API (CORS). For more than one address, separate them with commas (`https://new.vercel.app,https://old.vercel.app`); the first is the one emails link to.
 
 ---
 
