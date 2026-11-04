@@ -13,7 +13,6 @@ The odds and hype steps do real work only once a day.
 import json
 import logging
 from datetime import date, datetime, time, timedelta, timezone
-from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import text
@@ -22,8 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.services import hn_service
 from app.services.forecast_service import (
+    HN_MIN_POINTS,
     HYPE_MIN_PEAK,
     find_spikes,
+    homepage_key,
     hype_curve,
     matches_repo,
     train_and_backtest,
@@ -36,6 +37,10 @@ from app.services.trend_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bump when the way causes are matched changes, so stored spikes are looked up again.
+# 2: homepage matched by host and path, shared sites ignored, HN_MIN_POINTS.
+MATCH_RULE = 2
 
 
 # ---------------------------------------------------------------- spikes
@@ -79,7 +84,8 @@ async def detect_spikes(session: AsyncSession, today: date) -> None:
 async def explain_spikes(session: AsyncSession, today: date) -> None:
     """
     Look up spikes not yet explained. A spike with nothing found is retried once
-    a day for a week, since a story can be indexed after the stars arrive.
+    a day for a week, since a story can be indexed after the stars arrive. Spikes
+    explained under an older MATCH_RULE are looked up again.
     """
     todo = (
         await session.execute(
@@ -88,13 +94,14 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
                 SELECT s.id, s.spike_date, r.id AS rid, r.owner, r.name, r.homepage_url
                 FROM star_spikes s JOIN repositories r ON r.id = s.repository_id
                 WHERE s.checked_at IS NULL
+                   OR s.rule < :rule
                    OR (s.causes = '[]'::jsonb AND s.checked_at < NOW() - INTERVAL '1 day'
                        AND s.spike_date > CAST(:today AS DATE) - 7)
                 ORDER BY s.spike_date DESC, s.gain DESC
                 LIMIT :n
                 """
             ),
-            {"today": today, "n": settings.SPIKE_EXPLAIN_MAX},
+            {"today": today, "n": settings.SPIKE_EXPLAIN_MAX, "rule": MATCH_RULE},
         )
     ).fetchall()
     if not todo:
@@ -103,14 +110,12 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
     async def _one(client: httpx.AsyncClient, s) -> tuple[int, list[dict]]:
         start = datetime.combine(s.spike_date - timedelta(days=3), time.min, tzinfo=timezone.utc)
         end = datetime.combine(s.spike_date + timedelta(days=1), time.max, tzinfo=timezone.utc)
-        host = (urlparse(s.homepage_url or "").hostname or "").removeprefix("www.")
-        if host.endswith("github.com") or host.endswith("github.io"):
-            host = ""
-        queries = [f"{s.owner}/{s.name}"] + ([host] if host else [])
+        home = homepage_key(s.homepage_url)
+        queries = [f"{s.owner}/{s.name}"] + ([home] if home else [])
         stories: dict[str, dict] = {}
         for q in queries:
             for h in await hn_service.stories_between(client, q, start, end):
-                if matches_repo(h, s.owner, s.name, host or None):
+                if h["points"] >= HN_MIN_POINTS and matches_repo(h, s.owner, s.name, home):
                     stories[h["id"]] = h
         causes = [
             {"kind": "hn", "title": h["title"], "points": h["points"], "comments": h["comments"],
@@ -139,8 +144,11 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
         # Releases are read from the shared session, so look up one spike at a time.
         results = [await _one(client, s) for s in todo]
     await session.execute(
-        text("UPDATE star_spikes SET causes = CAST(:causes AS jsonb), checked_at = NOW() WHERE id = :id"),
-        [{"id": sid, "causes": json.dumps(c)} for sid, c in results],
+        text(
+            "UPDATE star_spikes SET causes = CAST(:causes AS jsonb), checked_at = NOW(), rule = :rule "
+            "WHERE id = :id"
+        ),
+        [{"id": sid, "causes": json.dumps(c), "rule": MATCH_RULE} for sid, c in results],
     )
     await session.execute(
         text("DELETE FROM star_spikes WHERE spike_date < CAST(:today AS DATE) - CAST(:keep AS INTEGER)"),
@@ -223,7 +231,10 @@ async def train_call_model(session: AsyncSession, today: date) -> None:
     ]
     result = train_and_backtest(samples)
     if result is None:
-        logger.info("Call odds: not enough history yet (%d samples)", len(samples))
+        logger.info(
+            "Call odds: not enough history yet (%d past breakouts, %d reached the top %d; need 40 and 5)",
+            len(samples), sum(x["hit"] for x in samples), settings.CALL_HIT_RANK,
+        )
         return
     await session.execute(
         text(

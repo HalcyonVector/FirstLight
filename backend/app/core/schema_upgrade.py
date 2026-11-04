@@ -72,6 +72,8 @@ DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_spikes_date ON star_spikes(spike_date DESC)",
+    # Which version of the cause-matching rules a spike was explained with.
+    "ALTER TABLE star_spikes ADD COLUMN IF NOT EXISTS rule SMALLINT NOT NULL DEFAULT 1",
     # The fitted odds model and its backtest (one row, replaced daily).
     """
     CREATE TABLE IF NOT EXISTS call_model (
