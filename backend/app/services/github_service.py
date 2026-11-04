@@ -212,6 +212,29 @@ class GitHubService:
             })
         return out
 
+    async def get_starred(self, login: str, max_pages: int = 3) -> list[dict] | None:
+        """
+        A user's starred repos (newest first, up to 100 per page). None if the
+        user doesn't exist. Only the fields the radar needs are kept.
+        """
+        out: list[dict] = []
+        for page in range(1, max_pages + 1):
+            try:
+                data = await self._get(f"/users/{login}/starred", params={"per_page": 100, "page": page})
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    return None
+                raise
+            for r in data if isinstance(data, list) else []:
+                out.append({
+                    "full_name": r.get("full_name"),
+                    "language": r.get("language"),
+                    "topics": r.get("topics") or [],
+                })
+            if not isinstance(data, list) or len(data) < 100:
+                break
+        return out
+
     _STARGAZERS_QUERY = """
     query($owner: String!, $name: String!) {
       repository(owner: $owner, name: $name) {

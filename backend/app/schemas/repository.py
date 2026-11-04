@@ -119,6 +119,32 @@ class BreakoutCallOut(BaseModel):
     status: str  # open / hit / miss
     hit_on: date | None = None
     best_rank: int | None = None
+    prob: float | None = None  # odds the call comes true, when the model existed
+
+
+class SpikeCause(BaseModel):
+    kind: str  # hn / release
+    title: str
+    url: str | None = None
+    at: datetime | None = None
+    points: int | None = None
+    comments: int | None = None
+
+
+class StarSpike(BaseModel):
+    date: date
+    gain: int
+    baseline: int
+    causes: list[SpikeCause] = []
+
+
+class HypeCurve(BaseModel):
+    peak_on: date
+    peak_gain7: int
+    now_gain7: int
+    half_on: date | None = None
+    commits_peak: int = 0
+    commits_now: int = 0
 
 
 class RepoDetail(BaseModel):
@@ -151,6 +177,8 @@ class RepoDetail(BaseModel):
     star_quality: StarQuality | None = None
     releases: list[ReleaseOut] = []
     breakout_call: BreakoutCallOut | None = None
+    spikes: list[StarSpike] = []
+    hype: HypeCurve | None = None
 
     class Config:
         from_attributes = True
