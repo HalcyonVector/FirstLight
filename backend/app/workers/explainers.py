@@ -204,8 +204,11 @@ GROUP BY c.rid, c.date, c.gain7, c.stars_total, c.accel, c.age
 
 async def train_call_model(session: AsyncSession, today: date) -> None:
     """Refit the odds model from a backtest over all stored history, once a day."""
-    last = (await session.execute(text("SELECT trained_on FROM call_model WHERE id = 1"))).scalar()
-    if last == today:
+    # Retrain anyway if today's model predates the trust check (no "usable" flag).
+    last = (
+        await session.execute(text("SELECT trained_on, model->'usable' IS NOT NULL AS checked FROM call_model WHERE id = 1"))
+    ).first()
+    if last and last.trained_on == today and last.checked:
         return
     await session.execute(text("SET LOCAL statement_timeout = '120s'"))
     rows = (
