@@ -64,7 +64,10 @@ async def _call_model(db: AsyncSession) -> dict | None:
     try:
         row = (
             await db.execute(
-                text("SELECT trained_on, samples, positives, base_rate, backtest FROM call_model WHERE id = 1")
+                text(
+                    "SELECT trained_on, samples, positives, base_rate, backtest, "
+                    "COALESCE((model->>'usable')::boolean, TRUE) AS usable FROM call_model WHERE id = 1"
+                )
             )
         ).first()
     except Exception:  # noqa: BLE001 -- table not created yet
