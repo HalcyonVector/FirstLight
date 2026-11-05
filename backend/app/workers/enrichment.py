@@ -154,7 +154,7 @@ async def update_lifecycles_and_calls(session: AsyncSession, today: date) -> Non
         for r in pool:
             r["prob"] = odds(r)
         # With a model that beats the average, call the likeliest; otherwise the sharpest acceleration.
-        ranks = bool(model and model.get("usable", True))
+        ranks = bool(model and model.get("usable", False))
         candidates = sorted(
             pool,
             key=lambda r: r["prob"] if ranks else acceleration(r["gain7"], r["prior_avg"]),

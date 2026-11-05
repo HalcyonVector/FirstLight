@@ -168,3 +168,12 @@ def test_model_that_loses_to_the_average_falls_back_to_it():
     good = train_and_backtest(_samples(600))
     assert good["model"]["usable"] is True
     assert call_odds(good["model"], [3.3, 6.0, 7.0, 4.0]) != good["model"]["base_rate"]
+
+
+def test_model_saved_before_the_trust_check_is_not_trusted():
+    from app.services.forecast_service import call_odds
+
+    old = train_and_backtest(_samples(600))["model"]
+    old.pop("usable")
+    old.pop("base_rate")
+    assert call_odds(old, [3.3, 6.0, 7.0, 4.0]) == 0.0

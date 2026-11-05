@@ -66,7 +66,7 @@ async def _call_model(db: AsyncSession) -> dict | None:
             await db.execute(
                 text(
                     "SELECT trained_on, samples, positives, base_rate, backtest, "
-                    "COALESCE((model->>'usable')::boolean, TRUE) AS usable FROM call_model WHERE id = 1"
+                    "COALESCE((model->>'usable')::boolean, FALSE) AS usable FROM call_model WHERE id = 1"
                 )
             )
         ).first()

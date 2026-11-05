@@ -246,7 +246,7 @@ def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int 
 
 def call_odds(model: dict, feats: list[float]) -> float:
     """The model's odds when it has earned them, otherwise the historical average."""
-    if model.get("usable", True):
+    if model.get("usable", False):  # a model saved before the trust check isn't trusted
         return predict(model, feats)
     return float(model.get("base_rate", 0.0))
 
