@@ -151,8 +151,8 @@ You still need a running Postgres and Redis, and the environment variables from 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/halcyon-vector/github-trending-intelligence.git
-cd github-trending-intelligence
+git clone https://github.com/HalcyonVector/FirstLight.git
+cd FirstLight
 
 # 2. Create your env file from the example and fill in GITHUB_TOKEN
 copy infra\.env.example infra\.env.txt
@@ -174,8 +174,8 @@ npm run dev   # double-check http://localhost:2326
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/halcyon-vector/github-trending-intelligence.git
-cd github-trending-intelligence
+git clone https://github.com/HalcyonVector/FirstLight.git
+cd FirstLight
 
 # 2. Create your env file and fill in GITHUB_TOKEN
 cp infra/.env.example infra/.env.txt
@@ -219,7 +219,7 @@ docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYT
 ## Project Structure
 
 ```
-github-trending-intelligence/
+FirstLight/
 ├── README.md                       # This file
 ├── render.yaml                     # Render Blueprint for the API
 ├── .github/
@@ -435,7 +435,7 @@ docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
 ## Author
 
 Sagnik
-GitHub: [@halcyon-vector](https://github.com/halcyon-vector)
+GitHub: [@HalcyonVector](https://github.com/HalcyonVector)
 
 ---
 
