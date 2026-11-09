@@ -2,6 +2,12 @@
 
 See open source early. FirstLight is a Bloomberg terminal for trending GitHub repositories (formerly GitHub Trending Intelligence). Every few hours it ingests the trending list, scores repositories by velocity rather than raw star counts, groups them into technology categories, and writes an AI analysis for the fastest risers. Built as a Next.js dashboard on a FastAPI and Celery backend, with a local free AI model and free browser push alerts. No paid services are required to run it.
 
+> **What it's for:** spot which GitHub repositories are taking off, and why, before they reach a trending page: a momentum score for each repo, breakout calls and an AI write-up for the fastest risers.
+
+**Live demo:** [firstlight-oss.vercel.app](https://firstlight-oss.vercel.app)
+
+![Dashboard: biggest gain today, newest breakout call, lead story and the hottest repositories](docs/screenshots/overview.png)
+
 ---
 
 ## Features
@@ -215,7 +221,7 @@ docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYT
 ```
 github-trending-intelligence/
 ├── README.md                       # This file
-├── render.yaml                     # Render Blueprint for the free tier API
+├── render.yaml                     # Render Blueprint for the API
 ├── .github/
 │   └── workflows/                  # refresh (every 6h), weekly-digest, keep-warm, tests
 │
@@ -314,7 +320,7 @@ FastAPI serves cached JSON, the Next.js dashboard renders it
 
 ## Deployment
 
-### Local (Free)
+### Local
 
 ```bash
 docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
@@ -327,10 +333,10 @@ The stack is designed for managed hosting:
 
 | Piece | Suggested host | Notes |
 |-------|----------------|-------|
-| **Frontend** | Vercel | Free tier, provides HTTPS which Web Push requires |
-| **Database** | Supabase or Neon | Free Postgres tier |
-| **Cache** | Upstash | Free Redis tier |
-| **API** | Render (free tier, `render.yaml` blueprint), Fly.io, or a small VPS | The included `render.yaml` deploys the API in one click |
+| **Frontend** | Vercel | Provides HTTPS, which Web Push requires |
+| **Database** | Supabase or Neon | Managed Postgres |
+| **Cache** | Upstash | Managed Redis |
+| **API** | Render (`render.yaml` blueprint), Fly.io, or a small VPS | The included `render.yaml` deploys the API in one click |
 | **Scheduler** | GitHub Actions | Replaces the always on `beat` container, so no worker needs to stay running (see below) |
 | **AI** | `AI_PROVIDER=groq` with a free Groq API key, any OpenAI compatible endpoint, or `AI_PROVIDER=off` | Groq's free tier runs a hosted 120B model (gpt-oss) with no card; free hosts cannot run a local model |
 
