@@ -113,6 +113,24 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
     if not todo:
         return
 
+    # Several spikes often share a homepage, so each host is fetched once a run,
+    # and a 429 from Lobsters turns off the remaining host lookups.
+    lobsters_hosts: dict[str, list[dict]] = {}
+    lobsters_paused = False
+
+    async def _lobsters_host(client: httpx.AsyncClient, host: str) -> list[dict]:
+        nonlocal lobsters_paused
+        if lobsters_paused:
+            return []
+        if host not in lobsters_hosts:
+            try:
+                lobsters_hosts[host] = await social_service.lobsters_domain(client, host)
+            except social_service.LobstersRateLimited:
+                lobsters_paused = True
+                logger.warning("Lobsters rate limited at %s; skipping the remaining homepage lookups", host)
+                return []
+        return lobsters_hosts[host]
+
     async def _one(client: httpx.AsyncClient, s, lobsters_gh: list[dict]) -> tuple[int, list[dict]]:
         start = datetime.combine(s.spike_date - timedelta(days=3), time.min, tzinfo=timezone.utc)
         end = datetime.combine(s.spike_date + timedelta(days=1), time.max, tzinfo=timezone.utc)
@@ -131,7 +149,7 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
 
         lob = list(lobsters_gh)
         if home:
-            lob += await social_service.lobsters_domain(client, home.split("/")[0])
+            lob += await _lobsters_host(client, home.split("/")[0])
         lob = [
             x for x in lob
             if x["points"] >= LOBSTERS_MIN_POINTS and within(x["at"], start, end)
@@ -170,7 +188,11 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
 
     async with httpx.AsyncClient(headers={"User-Agent": "FirstLight/1.0 (spike explanations)"}) as client:
         # One Lobsters feed of github.com links (~6 weeks) serves every spike in the run.
-        lobsters_gh = await social_service.lobsters_domain(client, "github.com", pages=2)
+        try:
+            lobsters_gh = await social_service.lobsters_domain(client, "github.com", pages=2)
+        except social_service.LobstersRateLimited:
+            lobsters_gh, lobsters_paused = [], True
+            logger.warning("Lobsters rate limited; skipping it this run")
         # Releases are read from the shared session, so look up one spike at a time.
         results = [await _one(client, s, lobsters_gh) for s in todo]
     await session.execute(

@@ -77,3 +77,25 @@ def test_lifetime_points_walk_back_from_todays_total():
         {"week": "2026-11-08", "stars": 1000},
     ]
     assert lifetime_points([{"week": week(1), "total": 500}, {"week": week(8), "total": 900}], 100)[0]["stars"] == 0
+
+
+def test_lobsters_unknown_domain_is_empty_and_429_stops():
+    import asyncio
+
+    import httpx
+    import pytest
+
+    from app.services import social_service
+
+    def handler(request):
+        if "unknown" in request.url.path:
+            return httpx.Response(500)
+        return httpx.Response(429)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            assert await social_service.lobsters_domain(client, "unknown.dev") == []
+            with pytest.raises(social_service.LobstersRateLimited):
+                await social_service.lobsters_domain(client, "busy.dev")
+
+    asyncio.run(run())

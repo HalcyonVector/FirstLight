@@ -18,6 +18,10 @@ LOBSTERS = "https://lobste.rs"
 BLUESKY_SEARCH = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts"
 
 
+class LobstersRateLimited(Exception):
+    """Lobsters said 429: stop asking it for the rest of the run."""
+
+
 async def lobsters_domain(client: httpx.AsyncClient, host: str, pages: int = 1) -> list[dict]:
     """Stories linking to host, newest first."""
     out = []
@@ -25,10 +29,15 @@ async def lobsters_domain(client: httpx.AsyncClient, host: str, pages: int = 1) 
         path = f"/domains/{host}.json" if page == 1 else f"/domains/{host}/page/{page}.json"
         try:
             resp = await client.get(LOBSTERS + path, timeout=15.0)
-            if resp.status_code == 404:
+            # Lobsters answers 500 (not 404) for a domain nobody has posted, so both mean "no stories".
+            if resp.status_code in (404, 500):
                 break
+            if resp.status_code == 429:
+                raise LobstersRateLimited(host)
             resp.raise_for_status()
             items = resp.json()
+        except LobstersRateLimited:
+            raise
         except Exception as e:  # noqa: BLE001 -- explanations are best-effort
             logger.warning("Lobsters lookup failed for %s: %s", host, e)
             break
