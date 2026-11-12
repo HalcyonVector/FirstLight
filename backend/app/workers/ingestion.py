@@ -476,7 +476,8 @@ def generate_ai_insights(self):
         raise self.retry(exc=exc)
 
 
-async def _generate_ai_insights() -> None:
+async def _generate_ai_insights() -> int:
+    """Write insights for the top repos that need one; returns how many were attempted."""
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
@@ -570,3 +571,4 @@ async def _generate_ai_insights() -> None:
         await session.commit()
 
     logger.info("Insight generation complete")
+    return len(rows)

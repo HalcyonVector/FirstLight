@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings  # noqa: E402
 from app.core.database import AsyncSessionLocal  # noqa: E402
-from app.services.digest_service import fetch_digest, signal  # noqa: E402
+from app.services.digest_service import cause_text, fetch_digest, fetch_week_signals, signal  # noqa: E402
 from app.services.notify_service import any_channel_configured, notify  # noqa: E402
 
 # -- Email palette: light newsletter; dark variant via prefers-color-scheme --
@@ -97,7 +97,69 @@ def _shipped_lines(shipped) -> list:
     ]
 
 
-def _text_body(breakouts, movers, shipped, date_range: str) -> str:
+def _week_lines(week: dict) -> list:
+    parts = []
+    if week["resolved"]:
+        parts += ["", "Our calls this week"]
+        for c in week["resolved"]:
+            if c["status"] == "hit":
+                parts.append(f"- Came true: {c['full_name']}, called {c['called_on']:%b %d} at "
+                             f"{c['stars_at_call']:,} stars, reached #{c['best_rank']} {c['lead_days']} days later")
+            else:
+                parts.append(f"- Missed: {c['full_name']}, called {c['called_on']:%b %d}, "
+                             "didn't reach the weekly top list in time")
+    if week["spikes"]:
+        parts += ["", "Why they jumped"]
+        for s in week["spikes"]:
+            parts.append(f"- {s['full_name']} +{s['gain']:,} stars on {s['date']:%b %d}: {cause_text(s['causes'][0])}")
+    return parts
+
+
+def _week_sections(week: dict) -> str:
+    html = ""
+    if week["resolved"]:
+        rows = []
+        for c in week["resolved"]:
+            if c["status"] == "hit":
+                pill = _pill("came true", "#1a7f37", "#dafbe1")
+                line = (f"Called {c['called_on']:%b %d} at {c['stars_at_call']:,} stars. "
+                        f"Reached #{c['best_rank']} on the weekly list {c['lead_days']} days later.")
+            else:
+                pill = _pill("missed", "#9a6700", "#fff8c5")
+                line = f"Called {c['called_on']:%b %d}. Didn&rsquo;t reach the weekly top list within 30 days."
+            rows.append(f"""
+    <tr><td class="gti-rule" style="padding:12px 28px;border-top:1px solid {RULE};">
+      <a href="{_site()}/repos/{c['id']}" class="gti-ink" style="font-family:{SANS};font-size:15px;font-weight:700;color:{INK};text-decoration:none;">{_esc(c['full_name'])}</a>
+      &nbsp;{pill}
+      <div class="gti-muted" style="font-family:{SANS};font-size:13px;line-height:19px;color:{MUTED};margin-top:2px;">{line}</div>
+    </td></tr>""")
+        html += f"""
+    <tr><td style="padding:30px 28px 14px;">
+      <div class="gti-ink" style="font-family:{SANS};font-size:20px;font-weight:800;color:{INK};">Our calls this week</div>
+      <div class="gti-dim" style="font-family:{SANS};font-size:13px;color:{DIM};margin-top:2px;">Breakout calls that came true or ran out of time</div>
+    </td></tr>
+    {"".join(rows)}"""
+    if week["spikes"]:
+        rows = []
+        for s in week["spikes"]:
+            c = s["causes"][0]
+            link = f'<a href="{c.get("url") or "#"}" style="color:{BLUE};">{_esc(cause_text(c))}</a>'
+            rows.append(f"""
+    <tr><td class="gti-rule" style="padding:12px 28px;border-top:1px solid {RULE};">
+      <a href="{_site()}/repos/{s['id']}" class="gti-ink" style="font-family:{SANS};font-size:15px;font-weight:700;color:{INK};text-decoration:none;">{_esc(s['full_name'])}</a>
+      &nbsp;{_pill(f"+{s['gain']:,} stars", "#1a7f37", "#dafbe1")}
+      <div class="gti-muted" style="font-family:{SANS};font-size:13px;line-height:19px;color:{MUTED};margin-top:2px;">{s['date']:%b %d}, usually {s['baseline']:,} a day. Set off by {link}</div>
+    </td></tr>""")
+        html += f"""
+    <tr><td style="padding:30px 28px 14px;">
+      <div class="gti-ink" style="font-family:{SANS};font-size:20px;font-weight:800;color:{INK};">Why they jumped</div>
+      <div class="gti-dim" style="font-family:{SANS};font-size:13px;color:{DIM};margin-top:2px;">The week&rsquo;s biggest star spikes and what set them off</div>
+    </td></tr>
+    {"".join(rows)}"""
+    return html
+
+
+def _text_body(breakouts, movers, shipped, date_range: str, week: dict | None = None) -> str:
     parts = [f"FirstLight -- Weekly Digest ({date_range})", ""]
     story = _big_story_line(breakouts, movers)
     if story:
@@ -106,6 +168,8 @@ def _text_body(breakouts, movers, shipped, date_range: str) -> str:
     parts += ["Top movers", *_lines(movers)]
     if shipped:
         parts += ["", "What shipped", *_shipped_lines(shipped)]
+    if week:
+        parts += _week_lines(week)
     parts += ["", f"Full dashboard: {_site()}/this-week"]
     return "\n".join(parts)
 
@@ -230,7 +294,7 @@ def _shipped_section(shipped) -> str:
     {"".join(items)}"""
 
 
-def _html_body(breakouts, movers, shipped, date_range: str) -> str:
+def _html_body(breakouts, movers, shipped, date_range: str, week: dict | None = None) -> str:
     site = _site()
     story = _big_story_line(breakouts, movers)
     story_block = (
@@ -283,6 +347,7 @@ def _html_body(breakouts, movers, shipped, date_range: str) -> str:
         {_section("Breakouts", "New repos that are accelerating fast", breakouts, True)}
         {_section("Top movers", "Ranked by momentum", movers, False)}
         {_shipped_section(shipped)}
+        {_week_sections(week) if week else ""}
 
         <tr><td align="center" class="gti-rule" style="padding:28px 28px 8px;border-top:1px solid {RULE};">
           <a href="{site}/this-week" style="display:inline-block;background:{ACCENT};color:#ffffff;font-family:{SANS};font-size:15px;font-weight:700;text-decoration:none;padding:12px 26px;border-radius:8px;">Open the live dashboard</a>
@@ -312,12 +377,14 @@ async def main() -> None:
 
     async with AsyncSessionLocal() as session:
         breakouts, movers, shipped = await fetch_digest(session)
+        week = await fetch_week_signals(session)
 
-    text_body = _text_body(breakouts, movers, shipped, date_range)
-    html_body = _html_body(breakouts, movers, shipped, date_range)
+    text_body = _text_body(breakouts, movers, shipped, date_range, week)
+    html_body = _html_body(breakouts, movers, shipped, date_range, week)
 
     await notify("FirstLight -- Weekly Digest", text_body, html_body)
-    print(f"Digest sent: {len(breakouts)} breakouts, {len(movers)} movers, {len(shipped)} releases")
+    print(f"Digest sent: {len(breakouts)} breakouts, {len(movers)} movers, {len(shipped)} releases, "
+          f"{len(week['resolved'])} resolved calls, {len(week['spikes'])} explained spikes")
 
 
 if __name__ == "__main__":

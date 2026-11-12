@@ -7,7 +7,7 @@ tested; the workers in app/workers/explainers.py feed it rows.
 import math
 import re
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timezone
 from statistics import median
 
 import numpy as np
@@ -45,6 +45,8 @@ def find_spikes(days: list[tuple[date, int]], today: date) -> list[dict]:
 
 
 HN_MIN_POINTS = 20  # a story with fewer points didn't cause a jump of 150+ stars
+LOBSTERS_MIN_POINTS = 10  # Lobsters scores run far lower than Hacker News points
+BLUESKY_MIN_LIKES = 50
 
 # Sites where a bare domain says nothing about which project a link is for.
 SHARED_HOSTS = {
@@ -114,6 +116,40 @@ def activity_verdict(stars_week: int, forks_week: int, typical_ratio: float) -> 
     if rel < ACTIVITY_MIXED:
         return "mixed"
     return "organic"
+
+
+def post_matches_repo(post: dict, owner: str, name: str, homepage: str | None) -> bool:
+    """A social post (with the links it carries) is about this repo."""
+    if matches_repo({"url": "", "title": post.get("title") or ""}, owner, name, None):
+        return True
+    return any(matches_repo({"url": link, "title": ""}, owner, name, homepage) for link in post.get("links") or [])
+
+
+def within(at: str | None, start: datetime, end: datetime) -> bool:
+    """An ISO timestamp (any offset) falls in [start, end]."""
+    if not at:
+        return False
+    try:
+        t = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return start <= t <= end
+
+
+def lifetime_points(weeks: list[dict], latest_stars: int) -> list[dict]:
+    """
+    GitHub's weekly star counts (newest first) to a cumulative series (oldest
+    first), walking back from today's total. Unstars aren't in the weekly
+    counts, so early weeks can read a little low; never below zero.
+    """
+    total, points = int(latest_stars or 0), []
+    for w in weeks:
+        points.append({"week": datetime.fromtimestamp(w["week"], tz=timezone.utc).date().isoformat(),
+                       "stars": max(total, 0)})
+        total -= w["total"]
+    return points[::-1]
 
 
 # ---------------------------------------------------------------- call odds
@@ -186,6 +222,7 @@ def calibration_bins(probs: list[float], labels: list[int]) -> list[dict]:
 
 
 MIN_SKILL = 0.05  # the model must be at least 5% better than guessing the average
+MIN_TEST_HITS = 8  # ...on a held-out set with enough hits that the margin isn't luck
 
 
 def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int = 5) -> dict | None:
@@ -216,6 +253,7 @@ def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int 
         b_model, b_base = brier(pt, yt), brier([base] * len(yt), yt)
         backtest = {
             "test_n": len(yt),
+            "test_hits": sum(yt),
             "test_from": str(test[0]["date"]),
             "test_to": str(test[-1]["date"]),
             "bins": calibration_bins(pt, yt),
@@ -233,6 +271,7 @@ def train_and_backtest(samples: list[dict], min_samples: int = 40, min_pos: int 
         and backtest["skill"] is not None
         and backtest["skill"] >= MIN_SKILL
         and backtest["top_third_rate"] > backtest["base_rate"]
+        and backtest["test_hits"] >= MIN_TEST_HITS
     )
     final["base_rate"] = round(pos / len(samples), 4)
     return {

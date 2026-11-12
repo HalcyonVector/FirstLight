@@ -46,8 +46,10 @@ async def _send_slack(client: httpx.AsyncClient, text: str) -> None:
         logger.warning("Slack notify failed: %s", e)
 
 
-async def _send_email(client: httpx.AsyncClient, subject: str, html: str) -> None:
+async def _send_email(client: httpx.AsyncClient, subject: str, html: str, owner_only: bool = False) -> None:
     recipients = _email_recipients()
+    if owner_only:
+        recipients = recipients[:1]  # health alerts go to the owner, not digest subscribers
     if not (settings.RESEND_API_KEY and recipients):
         return
     # One request per subscriber, so addresses stay private (no shared To/CC) and one
@@ -69,10 +71,13 @@ async def _send_email(client: httpx.AsyncClient, subject: str, html: str) -> Non
             logger.warning("Email notify failed for %s: %s", addr, e)
 
 
-async def notify(subject: str, text_body: str, html_body: str | None = None) -> None:
-    """Send to every configured channel. text_body -> Discord/Slack; html_body -> email."""
+async def notify(subject: str, text_body: str, html_body: str | None = None, owner_only: bool = False) -> None:
+    """
+    Send to every configured channel. text_body -> Discord/Slack; html_body -> email.
+    owner_only sends the email to the first ALERT_EMAIL_TO address only.
+    """
     html = html_body or ("<pre>" + text_body + "</pre>")
     async with httpx.AsyncClient(timeout=30.0) as client:
         await _send_discord(client, f"**{subject}**\n{text_body}")
         await _send_slack(client, f"*{subject}*\n{text_body}")
-        await _send_email(client, subject, html)
+        await _send_email(client, subject, html, owner_only=owner_only)

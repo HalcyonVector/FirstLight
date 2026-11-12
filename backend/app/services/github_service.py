@@ -235,6 +235,24 @@ class GitHubService:
                 break
         return out
 
+    async def get_star_history(self, owner: str, repo: str, max_pages: int = 8) -> tuple[list[dict], bool]:
+        """
+        Weekly star counts, newest first, from the privacy-safe history endpoint
+        (stargazer lists themselves are restricted since June 2026). 30 weeks a
+        request; returns (weeks, reached_creation).
+        """
+        weeks: list[dict] = []
+        for page in range(1, max_pages + 1):
+            data = await self._get(
+                f"/repos/{owner}/{repo}/stargazers/history",
+                params={"per_page": 30, "page": page},
+            )
+            items = data if isinstance(data, list) else []
+            weeks.extend({"week": int(w["week"]), "total": int(w.get("total") or 0)} for w in items)
+            if len(items) < 30:
+                return weeks, True
+        return weeks, False
+
     def parse_repo_data(self, raw: dict) -> dict:
         """Transform GitHub API response to our model fields."""
         owner_data = raw.get("owner", {})

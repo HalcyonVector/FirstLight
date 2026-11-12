@@ -16,7 +16,7 @@ from app.core.cache import cache_get, cache_incr, cache_set
 from app.core.config import settings
 from app.core.database import get_db
 from app.services.ask_service import describe, filter_sql, parse_question
-from app.services.digest_service import call_record, fetch_digest, signal
+from app.services.digest_service import call_record, fetch_digest, fetch_week_signals, signal
 from app.services.forecast_service import closest_starred, hype_summary, radar_score, star_profile
 from app.services.github_service import github_service
 
@@ -280,7 +280,7 @@ async def get_releases(
 @router.get("/digest")
 async def get_digest(db: AsyncSession = Depends(get_db)):
     """Exactly what the weekly email contains, for the This Week page."""
-    cached = await cache_get("digest:v1")
+    cached = await cache_get("digest:v2")
     if cached:
         return cached
     breakouts, movers, shipped = await fetch_digest(db)
@@ -305,8 +305,9 @@ async def get_digest(db: AsyncSession = Depends(get_db)):
         "breakouts": [_row(r) for r in breakouts],
         "movers": [_row(r) for r in movers],
         "shipped": [dict(r._mapping) for r in shipped],
+        **await fetch_week_signals(db),
     }
-    await cache_set("digest:v1", data, settings.CACHE_TTL_DASHBOARD)
+    await cache_set("digest:v2", data, settings.CACHE_TTL_DASHBOARD)
     return data
 
 

@@ -2,7 +2,7 @@
 Pipeline steps for the signals that explain and forecast momentum:
 
 - spikes:  find days a repo's stars jumped and look for the cause (a Hacker
-           News story, or a release that day)
+           News, Lobsters or Bluesky post, or a release that day)
 - odds:    fit the breakout-call model on 90 days of history, with a backtest
 - hype:    each hyped repo's peak week, where it is now, and when it halved
 
@@ -12,6 +12,7 @@ The odds and hype steps do real work only once a day.
 
 import json
 import logging
+from collections import Counter
 from datetime import date, datetime, time, timedelta, timezone
 
 import httpx
@@ -19,15 +20,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.services import hn_service
+from app.services import hn_service, social_service
 from app.services.forecast_service import (
+    BLUESKY_MIN_LIKES,
     HN_MIN_POINTS,
     HYPE_MIN_PEAK,
+    LOBSTERS_MIN_POINTS,
     find_spikes,
     homepage_key,
     hype_curve,
     matches_repo,
+    post_matches_repo,
     train_and_backtest,
+    within,
 )
 from app.services.trend_service import (
     CALL_MAX_AGE_DAYS,
@@ -40,7 +45,8 @@ logger = logging.getLogger(__name__)
 
 # Bump when the way causes are matched changes, so stored spikes are looked up again.
 # 2: homepage matched by host and path, shared sites ignored, HN_MIN_POINTS.
-MATCH_RULE = 2
+# 3: Lobsters and Bluesky added as sources.
+MATCH_RULE = 3
 
 
 # ---------------------------------------------------------------- spikes
@@ -107,7 +113,7 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
     if not todo:
         return
 
-    async def _one(client: httpx.AsyncClient, s) -> tuple[int, list[dict]]:
+    async def _one(client: httpx.AsyncClient, s, lobsters_gh: list[dict]) -> tuple[int, list[dict]]:
         start = datetime.combine(s.spike_date - timedelta(days=3), time.min, tzinfo=timezone.utc)
         end = datetime.combine(s.spike_date + timedelta(days=1), time.max, tzinfo=timezone.utc)
         home = homepage_key(s.homepage_url)
@@ -122,6 +128,28 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
              "at": h["at"], "url": f"https://news.ycombinator.com/item?id={h['id']}"}
             for h in sorted(stories.values(), key=lambda h: -h["points"])[:2]
         ]
+
+        lob = list(lobsters_gh)
+        if home:
+            lob += await social_service.lobsters_domain(client, home.split("/")[0])
+        lob = [
+            x for x in lob
+            if x["points"] >= LOBSTERS_MIN_POINTS and within(x["at"], start, end)
+            and matches_repo(x, s.owner, s.name, home)
+        ]
+        if lob:
+            top = max(lob, key=lambda x: x["points"])
+            causes.append({"kind": "lobsters", "title": top["title"], "points": top["points"],
+                           "comments": top["comments"], "at": top["at"], "url": top["link"]})
+
+        posts = [
+            p for p in await social_service.bluesky_posts(client, s.name, start, end)
+            if p["points"] >= BLUESKY_MIN_LIKES and post_matches_repo(p, s.owner, s.name, home)
+        ]
+        if posts:
+            top = max(posts, key=lambda p: p["points"])
+            causes.append({"kind": "bluesky", "title": top["title"], "points": top["points"],
+                           "comments": top["comments"], "at": top["at"], "url": top["link"]})
         release = (
             await session.execute(
                 text(
@@ -141,8 +169,10 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
         return s.id, causes
 
     async with httpx.AsyncClient(headers={"User-Agent": "FirstLight/1.0 (spike explanations)"}) as client:
+        # One Lobsters feed of github.com links (~6 weeks) serves every spike in the run.
+        lobsters_gh = await social_service.lobsters_domain(client, "github.com", pages=2)
         # Releases are read from the shared session, so look up one spike at a time.
-        results = [await _one(client, s) for s in todo]
+        results = [await _one(client, s, lobsters_gh) for s in todo]
     await session.execute(
         text(
             "UPDATE star_spikes SET causes = CAST(:causes AS jsonb), checked_at = NOW(), rule = :rule "
@@ -156,7 +186,9 @@ async def explain_spikes(session: AsyncSession, today: date) -> None:
     )
     await session.commit()
     explained = sum(1 for _, c in results if c)
-    logger.info("Spikes explained: %d of %d checked", explained, len(results))
+    kinds = Counter(c["kind"] for _, cs in results for c in cs)
+    logger.info("Spikes explained: %d of %d checked (%s)", explained, len(results),
+                ", ".join(f"{k} {n}" for k, n in sorted(kinds.items())) or "no causes found")
 
 
 # ---------------------------------------------------------------- odds
@@ -224,22 +256,41 @@ async def train_call_model(session: AsyncSession, today: date) -> None:
             },
         )
     ).fetchall()
+    # Bank this backtest's breakouts (first sighting wins), then train on everything banked,
+    # including breakouts whose daily metrics have since been pruned.
+    if rows:
+        await session.execute(
+            text(
+                """
+                INSERT INTO call_samples (repository_id, sample_date, accel, gain7, stars, age, best_rank)
+                VALUES (:rid, :d, :accel, :gain7, :stars, :age, :best_rank)
+                ON CONFLICT (repository_id) DO UPDATE
+                SET best_rank = EXCLUDED.best_rank
+                WHERE call_samples.sample_date = EXCLUDED.sample_date
+                """
+            ),
+            [{"rid": r.rid, "d": r.date, "accel": round(min(float(r.accel), 99_999_999), 2), "gain7": int(r.gain7),
+              "stars": int(r.stars_total), "age": int(r.age), "best_rank": r.best_rank} for r in rows],
+        )
+    banked = (
+        await session.execute(text("SELECT sample_date, accel, gain7, stars, age, best_rank FROM call_samples"))
+    ).fetchall()
     samples = [
-        {"date": r.date, "accel": float(r.accel), "gain7": int(r.gain7), "stars": int(r.stars_total),
-         "age": int(r.age), "hit": r.best_rank is not None and r.best_rank <= settings.CALL_HIT_RANK}
-        for r in rows
+        {"date": b.sample_date, "accel": float(b.accel), "gain7": int(b.gain7), "stars": int(b.stars),
+         "age": int(b.age), "hit": b.best_rank is not None and b.best_rank <= settings.CALL_HIT_RANK}
+        for b in banked
     ]
     if samples:
         rates = ", ".join(
-            f"top {n}: {sum(1 for r in rows if r.best_rank is not None and r.best_rank <= n)}"
+            f"top {n}: {sum(1 for b in banked if b.best_rank is not None and b.best_rank <= n)}"
             for n in (25, 50, 100, 200)
         )
-        logger.info("Call odds: %d past breakouts reached %s (hit bar is top %d)",
+        logger.info("Call odds: %d banked breakouts reached %s (hit bar is top %d)",
                     len(samples), rates, settings.CALL_HIT_RANK)
     result = train_and_backtest(samples)
     if result is None:
         logger.info(
-            "Call odds: not enough history yet (%d past breakouts, %d reached the top %d; need 40 and 5)",
+            "Call odds: not enough history yet (%d banked breakouts, %d reached the top %d; need 40 and 5)",
             len(samples), sum(x["hit"] for x in samples), settings.CALL_HIT_RANK,
         )
         return
@@ -266,8 +317,8 @@ async def train_call_model(session: AsyncSession, today: date) -> None:
     await session.commit()
     bt = result["backtest"] or {}
     logger.info(
-        "Call odds: model fitted on %d samples (%d hits); backtest skill %s, %s",
-        result["samples"], result["positives"], bt.get("skill"),
+        "Call odds: model fitted on %d samples (%d hits); backtest skill %s on %s held-out hits, %s",
+        result["samples"], result["positives"], bt.get("skill"), bt.get("test_hits"),
         "in use" if result["model"]["usable"] else "not better than the average yet, using the average",
     )
 

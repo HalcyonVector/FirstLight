@@ -109,6 +109,69 @@ async def fetch_digest(session: AsyncSession) -> tuple[list, list, list]:
     return breakouts, movers, shipped
 
 
+CAUSE_NAMES = {"hn": "Hacker News", "lobsters": "Lobsters", "bluesky": "Bluesky", "release": "a release"}
+
+
+def cause_text(c: dict) -> str:
+    """'Hacker News: "Show HN: X" (412 points)' or 'a release: v2.0'."""
+    name = CAUSE_NAMES.get(c.get("kind"), c.get("kind") or "?")
+    if c.get("kind") == "release":
+        return f"{name}: {c.get('title')}"
+    unit = "likes" if c.get("kind") == "bluesky" else "points"
+    return f'{name}: "{(c.get("title") or "")[:90]}" ({c.get("points") or 0:,} {unit})'
+
+
+async def fetch_week_signals(session: AsyncSession) -> dict:
+    """
+    For the weekly email and This Week page: calls that resolved in the last 7
+    days (came true, or ran out of time) and the week's biggest explained spikes.
+    """
+    today = datetime.now(timezone.utc).date()
+    out: dict = {"resolved": [], "spikes": []}
+    try:
+        rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT c.repository_id AS id, r.full_name, c.called_on, c.stars_at_call,
+                           c.hit_on, c.best_rank, c.prob
+                    FROM breakout_calls c JOIN repositories r ON r.id = c.repository_id
+                    WHERE c.hit_on > CAST(:today AS DATE) - 7
+                       OR (c.hit_on IS NULL
+                           AND c.called_on + CAST(:window AS INTEGER) BETWEEN CAST(:today AS DATE) - 7
+                                                                          AND CAST(:today AS DATE) - 1)
+                    ORDER BY c.hit_on DESC NULLS LAST, c.called_on
+                    """
+                ),
+                {"today": today, "window": settings.CALL_WINDOW_DAYS},
+            )
+        ).fetchall()
+        out["resolved"] = [
+            {"id": r.id, "full_name": r.full_name, "called_on": r.called_on, "stars_at_call": r.stars_at_call,
+             "status": "hit" if r.hit_on else "miss", "hit_on": r.hit_on, "best_rank": r.best_rank,
+             "lead_days": (r.hit_on - r.called_on).days if r.hit_on else None,
+             "prob": float(r.prob) if r.prob is not None else None}
+            for r in rows
+        ]
+        spikes = (
+            await session.execute(
+                text(
+                    """
+                    SELECT s.repository_id AS id, r.full_name, s.spike_date AS date, s.gain, s.baseline, s.causes
+                    FROM star_spikes s JOIN repositories r ON r.id = s.repository_id
+                    WHERE s.spike_date > CAST(:today AS DATE) - 7 AND s.causes <> '[]'::jsonb
+                    ORDER BY s.gain DESC LIMIT 4
+                    """
+                ),
+                {"today": today},
+            )
+        ).fetchall()
+        out["spikes"] = [dict(s._mapping) for s in spikes]
+    except Exception:  # noqa: BLE001 -- tables not created yet
+        await session.rollback()
+    return out
+
+
 async def call_record(session: AsyncSession) -> dict:
     """
     Every breakout call with its outcome. A call is a hit once the repo reaches
