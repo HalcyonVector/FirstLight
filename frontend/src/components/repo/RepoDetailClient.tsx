@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { getRepository, getRepositoryMetrics, getSimilarRepos } from "@/lib/api";
+import { getRepository, getRepositoryMetrics, getSimilarRepos, getStarHistory } from "@/lib/api";
 import { addRecentRepo } from "@/lib/recent";
 import type { DailyMetric, HypeCurve, MomentumBreakdown, RepoDetail, RepoStarCheck, StarSpike } from "@/lib/types";
 import { formatStat, formatDelta, getLanguageColor, relativeTime } from "@/lib/utils";
@@ -11,9 +11,9 @@ import { parseCompetitors } from "@/lib/chart";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { AreaChart, BarChart, shortDate } from "@/components/shared/Charts";
 import { LifecycleChip, OddsChip } from "@/components/shared/Signals";
-import { milestoneMarkers, releaseMarkers, spikeMarkers } from "@/lib/markers";
+import { CAUSE_LABEL, causeStats, milestoneMarkers, releaseMarkers, spikeMarkers } from "@/lib/markers";
 
-type Range = "30d" | "90d";
+type Range = "30d" | "90d" | "all";
 
 export function RepoDetailClient({ id }: { id: number }) {
   const [range, setRange] = useState<Range>("90d");
@@ -26,11 +26,20 @@ export function RepoDetailClient({ id }: { id: number }) {
   });
 
   const { data: metrics } = useQuery({
-    queryKey: ["repo-metrics", id, range],
-    queryFn: () => getRepositoryMetrics(id, range),
+    queryKey: ["repo-metrics", id, range === "all" ? "90d" : range],
+    queryFn: () => getRepositoryMetrics(id, range === "all" ? "90d" : range),
     staleTime: 5 * 60_000,
     retry: false,
     placeholderData: keepPreviousData,
+  });
+
+  // Lifetime stars come from GitHub's weekly history, fetched only when asked for.
+  const { data: lifetime, isFetching: lifetimeLoading, isError: lifetimeError } = useQuery({
+    queryKey: ["star-history", id],
+    queryFn: () => getStarHistory(id),
+    enabled: range === "all",
+    staleTime: 60 * 60_000,
+    retry: false,
   });
 
   const { data: similar } = useQuery({
@@ -158,14 +167,35 @@ export function RepoDetailClient({ id }: { id: number }) {
             </span>
           </span>
           <span className="rangetabs" role="group" aria-label="Chart range">
-            {(["30d", "90d"] as Range[]).map((r) => (
+            {(["30d", "90d", "all"] as Range[]).map((r) => (
               <button key={r} className={`chip ${range === r ? "on" : ""}`} onClick={() => setRange(r)}>
-                {r === "30d" ? "30 days" : "90 days"}
+                {r === "30d" ? "30 days" : r === "90d" ? "90 days" : "All time"}
               </button>
             ))}
           </span>
         </h4>
-        {starsSeries.length > 2 ? (
+        {range === "all" ? (
+          lifetime && lifetime.weeks.length > 2 ? (
+            <>
+              <AreaChart
+                values={lifetime.weeks.map((w) => w.stars)}
+                labels={lifetime.weeks.map((w) => `Week of ${shortDate(w.week)}`)}
+                height={200}
+              />
+              {!lifetime.complete && (
+                <p className="sigwhy">Showing the most recent {lifetime.weeks.length} weeks.</p>
+              )}
+            </>
+          ) : (
+            <div className="note" style={{ margin: 0 }}>
+              {lifetimeLoading
+                ? "Loading the full history from GitHub…"
+                : lifetimeError
+                  ? "Full history isn't available right now. Try 90 days, or check back later."
+                  : "Not enough history yet."}
+            </div>
+          )
+        ) : starsSeries.length > 2 ? (
           <AreaChart values={starsSeries} labels={dayLabels} markers={markers} height={200} />
         ) : (
           <div className="note" style={{ margin: 0 }}>Metrics will appear once daily snapshots accumulate.</div>
@@ -406,7 +436,7 @@ function WhyItJumped({ spikes }: { spikes: StarSpike[] }) {
   return (
     <div className="chartcard whyjump">
       <h4>
-        Why it jumped <span>Hacker News and releases, checked each refresh</span>
+        Why it jumped <span>Hacker News, Lobsters, Bluesky and releases, checked each refresh</span>
       </h4>
       {spikes.map((s) => (
         <div key={s.date} className="spikerow">
@@ -420,19 +450,15 @@ function WhyItJumped({ spikes }: { spikes: StarSpike[] }) {
             {s.causes.length ? (
               s.causes.map((c, i) => (
                 <a key={i} href={c.url ?? undefined} target="_blank" rel="noopener noreferrer" className={`cause ${c.kind}`}>
-                  <span className="ck">{c.kind === "hn" ? "Hacker News" : "Release"}</span>
+                  <span className="ck">{CAUSE_LABEL[c.kind]}</span>
                   <span className="ct">{c.title}</span>
-                  {c.kind === "hn" && (
-                    <span className="cm">
-                      {formatStat(c.points ?? 0)} points · {formatStat(c.comments ?? 0)} comments
-                    </span>
-                  )}
+                  {c.kind !== "release" && <span className="cm">{causeStats(c)}</span>}
                 </a>
               ))
             ) : (
               <span className="nocause">
-                No public trigger found on Hacker News or in releases. It may have come from social media or a
-                newsletter.
+                No public trigger found on Hacker News, Lobsters, Bluesky or in releases. It may have come from
+                X, YouTube or a newsletter, which can&apos;t be searched for free.
               </span>
             )}
           </div>

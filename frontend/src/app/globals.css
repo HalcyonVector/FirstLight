@@ -381,7 +381,10 @@ html[data-theme="paper"] {
 }
 
 
-@layer base {
+/* Overrides for the component styles above, so they share the components layer:
+   in @layer base they silently lost to every components rule (call rows kept a
+   24px first column, compact rows kept full padding). */
+@layer components {
   /* Rows and cards are real links now; keep them laid out like the old divs */
   a.cat, a.ri { display:block; }
   button.chip { background:none; }
@@ -795,3 +798,5 @@ a.hyperow:hover span:first-child { color:var(--ember); }
 }
 .oddsnote { margin-top:10px; padding:10px 14px; border-left:3px solid var(--dim2); background:var(--panel);
   border-radius:0 8px 8px 0; color:var(--dim); max-width:72ch; font-size:14px; }
+.ck.bluesky, .cause.bluesky .ck { color:#4f9cf9; }
+.ck.lobsters, .cause.lobsters .ck { color:#d26a5c; }

@@ -4,6 +4,7 @@ import type {
   ForUserResult,
   HypeData,
   StarCheck,
+  StarHistory,
   CallsResponse,
   CategoryMomentum,
   DigestData,
@@ -154,6 +155,8 @@ export const ask = (q: string): Promise<AskResult> => fetchJSON<AskResult>("/ask
 export const getSpikes = (days = 7): Promise<{ spikes: ExplainedSpike[] }> =>
   fetchJSON<{ spikes: ExplainedSpike[] }>("/spikes", { days });
 export const getHype = (): Promise<HypeData> => fetchJSON<HypeData>("/hype");
+export const getStarHistory = (id: number): Promise<StarHistory> =>
+  fetchJSON<StarHistory>(`/repositories/${id}/star-history`);
 export const getStarChecks = (ids: number[]): Promise<{ checks: Record<string, StarCheck> }> =>
   fetchJSON<{ checks: Record<string, StarCheck> }>("/star-checks", { ids: ids.join(",") });
 

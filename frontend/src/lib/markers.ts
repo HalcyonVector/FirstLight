@@ -1,5 +1,5 @@
 import type { ChartMarker } from "@/components/shared/Charts";
-import type { DailyMetric, Release, StarSpike } from "./types";
+import type { DailyMetric, Release, SpikeCause, StarSpike } from "./types";
 import { formatStat } from "./utils";
 
 const MILESTONES = [100, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000];
@@ -34,10 +34,26 @@ export function milestoneMarkers(daily: Pick<DailyMetric, "stars_total">[]): Cha
   return out;
 }
 
+export const CAUSE_LABEL: Record<SpikeCause["kind"], string> = {
+  hn: "Hacker News",
+  lobsters: "Lobsters",
+  bluesky: "Bluesky",
+  release: "Release",
+};
+
+/** "412 points · 120 comments", or "90 likes · 12 reposts" for Bluesky; "" for releases. */
+export function causeStats(c: SpikeCause): string {
+  if (c.kind === "release") return "";
+  const [a, b] = c.kind === "bluesky" ? ["likes", "reposts"] : ["points", "comments"];
+  return `${formatStat(c.points ?? 0)} ${a} · ${formatStat(c.comments ?? 0)} ${b}`;
+}
+
 /** One line naming what caused a spike: "Hacker News · 412 points", "Released v2.0", or the jump itself. */
 export function spikeCauseLine(s: StarSpike): string {
-  const hn = s.causes.find((c) => c.kind === "hn");
-  if (hn) return `Hacker News · ${formatStat(hn.points ?? 0)} points`;
+  for (const kind of ["hn", "lobsters", "bluesky"] as const) {
+    const c = s.causes.find((x) => x.kind === kind);
+    if (c) return `${CAUSE_LABEL[kind]} · ${formatStat(c.points ?? 0)} ${kind === "bluesky" ? "likes" : "points"}`;
+  }
   const rel = s.causes.find((c) => c.kind === "release");
   if (rel) return `Released ${rel.title}`;
   return `+${formatStat(s.gain)} stars in a day`;

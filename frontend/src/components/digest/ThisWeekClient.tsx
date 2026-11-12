@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getCalls, getDigest, getRadar } from "@/lib/api";
 import type { DigestRepo } from "@/lib/types";
 import { formatStat, formatDelta, relativeTime } from "@/lib/utils";
+import { shortDate } from "@/components/shared/Charts";
+import { spikeCauseLine } from "@/lib/markers";
 
 /** The weekly email, as a page: same sections, same data (/api/v1/digest). */
 export function ThisWeekClient() {
@@ -59,6 +61,56 @@ export function ThisWeekClient() {
       </div>
       {isLoading ? <Skel /> : movers.length ? movers.map((r, i) => <DigestRow key={r.id} r={r} rank={i + 1} />) : (
         <div className="note">No movers yet.</div>
+      )}
+
+      {(digest?.resolved?.length ?? 0) > 0 && (
+        <>
+          <div className="rulehead">
+            Our calls this week <Link className="meta" href="/breakouts">full track record →</Link>
+          </div>
+          {digest!.resolved!.map((c) => (
+            <Link key={c.id} className="lentry callrow" href={`/repos/${c.id}`}>
+              <div className="rk">
+                <span className={`callstat ${c.status}`}>{c.status === "hit" ? "came true" : "missed"}</span>
+              </div>
+              <div>
+                <div className="nm">{c.full_name}</div>
+                <div className="ds">
+                  Called {shortDate(c.called_on)} at {formatStat(c.stars_at_call)} stars
+                  {c.status === "hit"
+                    ? `, reached #${c.best_rank} on the weekly list ${c.lead_days} day${c.lead_days === 1 ? "" : "s"} later`
+                    : ", didn't reach the weekly top list within 30 days"}
+                  {c.prob != null && ` · called at ${Math.round(c.prob * 100)}% odds`}
+                </div>
+              </div>
+              <div />
+            </Link>
+          ))}
+        </>
+      )}
+
+      {(digest?.spikes?.length ?? 0) > 0 && (
+        <>
+          <div className="rulehead">
+            Why they jumped <span className="meta">the week&apos;s biggest star spikes</span>
+          </div>
+          {digest!.spikes!.map((s) => (
+            <Link key={`${s.id}-${s.date}`} className="lentry" href={`/repos/${s.id}`}>
+              <div className="rk">↑</div>
+              <div>
+                <div className="nm">{s.full_name}</div>
+                <div className="ds">
+                  {spikeCauseLine(s)}
+                  {s.causes[0]?.kind !== "release" && <> · &ldquo;{s.causes[0].title}&rdquo;</>}
+                </div>
+              </div>
+              <div className="rt">
+                <div className="gv">+{formatStat(s.gain)}</div>
+                <div className="gl">{shortDate(s.date)}</div>
+              </div>
+            </Link>
+          ))}
+        </>
       )}
 
       <div className="panelrow" style={{ marginTop: 12 }}>

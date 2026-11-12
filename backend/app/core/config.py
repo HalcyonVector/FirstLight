@@ -124,6 +124,8 @@ class Settings(BaseSettings):
     # Hype half-life is recomputed once a day from daily_metrics.
     # GitHub-stars radar: up to 3 GitHub calls per lookup, cached, capped per day.
     RADAR_DAILY_LIMIT: int = 200
+    # Lifetime star chart: up to 8 GitHub calls a repo, cached a day, capped per day.
+    STAR_HISTORY_DAILY_LIMIT: int = 300
     RADAR_CACHE_TTL: int = 21600
 
 

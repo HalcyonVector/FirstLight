@@ -89,6 +89,19 @@ DDL = [
         backtest         JSONB
     )
     """,
+    # Every breakout the backtest has seen, kept after daily_metrics is pruned
+    # (90 days) so the odds model's training set keeps growing. ~1 row a day.
+    """
+    CREATE TABLE IF NOT EXISTS call_samples (
+        repository_id    BIGINT PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE,
+        sample_date      DATE NOT NULL,
+        accel            NUMERIC(10,2) NOT NULL,
+        gain7            INT NOT NULL,
+        stars            INT NOT NULL,
+        age              INT NOT NULL,
+        best_rank        INT
+    )
+    """,
     # Per repo: its biggest week, where it is now, and when it fell to half.
     """
     CREATE TABLE IF NOT EXISTS hype_curves (

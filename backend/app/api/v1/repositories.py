@@ -6,11 +6,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.cache import cache_get, cache_set
+from app.core.cache import cache_get, cache_incr, cache_set
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.repository import InsightReport, Repository, RepositoryCategory
 from app.schemas.repository import PaginatedRepos, RepoDetail, RepoMetricsResponse
+from app.services.forecast_service import lifetime_points
+from app.services.github_service import github_service
 from app.services.trend_service import momentum_breakdown
 
 router = APIRouter()
@@ -201,6 +203,34 @@ async def get_repository(repo_id: int, db: AsyncSession = Depends(get_db)):
     }
 
     await cache_set(cache_key, data, settings.CACHE_TTL_REPO_DETAIL)
+    return data
+
+
+@router.get("/{repo_id}/star-history")
+async def get_star_history(repo_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Lifetime stars, week by week, from GitHub's star history endpoint (our own
+    daily metrics only go back 90 days). Cached a day; capped per day because
+    it spends the API's GitHub quota.
+    """
+    key = f"starhist:v1:{repo_id}"
+    cached = await cache_get(key)
+    if cached:
+        return cached
+    repo = (
+        await db.execute(text("SELECT owner, name, latest_stars FROM repositories WHERE id = :id"), {"id": repo_id})
+    ).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    used = await cache_incr(f"starhist:count:{datetime.now(timezone.utc).date().isoformat()}", 86400)
+    if used is None or used > settings.STAR_HISTORY_DAILY_LIMIT:
+        raise HTTPException(status_code=503, detail="Full history is paused for today.")
+    try:
+        weeks, complete = await github_service.get_star_history(repo.owner, repo.name)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="GitHub didn't return the history.")
+    data = {"weeks": lifetime_points(weeks, repo.latest_stars), "complete": complete}
+    await cache_set(key, data, 86400)
     return data
 
 

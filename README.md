@@ -1,217 +1,161 @@
-# FirstLight
+# FirstLight: See Open Source Early
 
-See open source early. FirstLight is a Bloomberg terminal for trending GitHub repositories (formerly GitHub Trending Intelligence). Every few hours it ingests the trending list, scores repositories by velocity rather than raw star counts, groups them into technology categories, and writes an AI analysis for the fastest risers. Built as a Next.js dashboard on a FastAPI and Celery backend, with a local free AI model and free browser push alerts. No paid services are required to run it.
+A tracker for trending GitHub repositories that tries to answer the questions a star count can't. Every six hours it pulls the repositories climbing GitHub, scores them by how fast they are growing rather than how big they are, and groups them into technology categories. Then it goes further than a leaderboard: it makes dated predictions about which small repositories are breaking out and publishes how often those predictions come true, finds the day a repository's stars jumped and looks for what set it off, flags stars that arrive without the forks real interest brings, measures how quickly hype fades once a repository has its big week, and writes an AI analysis of the fastest risers. A weekly email sums it all up.
 
-> **What it's for:** spot which GitHub repositories are taking off, and why, before they reach a trending page: a momentum score for each repo, breakout calls and an AI write-up for the fastest risers.
+Built with Next.js, React and FastAPI on PostgreSQL and Redis, fed by the GitHub API, Hacker News, Lobsters and Bluesky, with AI write-ups from a Groq-hosted model (or a local one through Ollama) and the whole pipeline scheduled by GitHub Actions.
+
+> **What it's for:** spotting the open source projects worth watching before they are everywhere, and knowing why they are rising, whether the attention is real and whether it is likely to last.
 
 **Live demo:** [firstlight-oss.vercel.app](https://firstlight-oss.vercel.app)
 
-![Dashboard: biggest gain today, newest breakout call, lead story and the hottest repositories](docs/screenshots/overview.png)
+![Front page: today at a glance, the week's lead story with its star curve, and the Hottest Today list with sparklines](docs/screenshots/overview.png)
+
+![Breakout calls: dated predictions with their odds, a public hit rate, and a stars-without-forks warning on one call](docs/screenshots/breakouts.png)
+
+---
+
+## Disclaimer
+
+**FirstLight is a learning project, not investment, hiring or security advice.** Momentum scores, breakout odds, spike explanations and star checks are heuristics built on public data and can be wrong. A repository flagged "stars without forks" is not proven to have bought stars, and a repository with no flag is not proven clean. The AI write-ups are generated text and can contain mistakes. Check anything that matters on the repository itself. See Honest Limitations for the specifics.
+
+---
+
+## Findings
+
+Real problems found while building and running this, and what changed:
+
+- **The AI write-ups failed silently for about 80 days.** Groq retired both Llama models the app used on August 16, 2026. Every insight call returned a 404, the refresh job still finished "successfully", and nobody noticed until the log was read by hand. The app moved to `openai/gpt-oss-120b` and `openai/gpt-oss-20b`, and every refresh now ends with a health check that emails the owner when a step fails, most AI write-ups fail or the database passes 80% of its quota.
+- **GitHub stopped publishing who starred a repository.** The original bought-star check sampled the 100 most recent stargazers and looked for brand-new or empty accounts. Since GitHub restricted stargazer lists to repository admins on June 30, 2026, the GraphQL query returns an empty list with no error, so the check had never produced a result in production. It was replaced by a check on data already stored: forks per star this week against the typical fast grower's, which measured about **one fork per 9 stars** across the week's fastest-growing repositories.
+- **Lists are starred, not forked.** The first run of the fork check flagged `awesome-python` and `awesome-go`. People star curated lists as bookmarks, so few forks is normal there. Only repositories under two years old that are not awesome-style lists are judged now; the plausible catches (11,800 stars and 297 forks in a week) remain.
+- **"Top 25" was the wrong bar for a breakout.** Calls originally came true if a repository reached the weekly top 25 by stars gained. The backtest found **3 of 87** small breakouts ever got there, because that list needs about 1,870 stars a week and is held by repositories with tens of thousands of stars. The bar is now the weekly top 100 (about 530 stars a week), which 14 of 79 past breakouts reached.
+- **The odds model lost to guessing the average.** On held-out recent breakouts its top-rated third came true 12% of the time against 25% for all of them. Rather than let it pick calls, it now has to beat the average by at least 5% on a held-out set with at least 8 breakouts that came true. On synthetic data, pure noise passes that gate 0 times in 30 and a real signal 10 times in 10. Until it qualifies, every call shows the plain average odds.
+- **One homepage matched every arXiv story.** Spike causes are found partly by searching Hacker News for a repository's homepage. A repository whose homepage was an arXiv paper was credited with unrelated arXiv stories, because homepages were matched by domain only. Homepages now match by host and path, bare shared sites never match, and a story needs 20 points to count.
+- **Hype fades fast.** Across 268 repositories that had a week of 700+ stars, weekly stars typically halved within **5 days** of the peak, only 18% were still at half their best week or better, and about 60% kept up their commit activity.
+- **Training data was capped by retention.** Daily metrics are kept for 90 days to fit the database quota, which also capped the odds model at about 80 past breakouts. Every breakout the backtest sees is now banked in a small table, so the training set keeps growing after the daily rows are pruned.
+- **A CSS cascade layer hid a whole block of overrides.** Row and card overrides sat in `@layer base`, which loses to every `@layer components` rule regardless of order, so breakout rows kept a 24px first column and the status and odds pills ran into the repository name. Moving the block to the components layer fixed both.
+- **Momentum reads zero on a fresh database.** It measures change, so it needs a second daily snapshot. `scripts/seed_demo.py` inserts a synthetic prior day for local development.
 
 ---
 
 ## Features
 
-### Core Features
+### Front Page
 
-- **Momentum scoring** A single 0 to 100 score per repository, blending star, fork, contributor, and commit velocity, with a recency bonus for new projects. This one number drives every leaderboard and ranking.
-- **Live leaderboards** Hottest today and rising this week, ranked by star velocity with inline 7 day sparklines.
-- **Category momentum** Fifteen technology categories (AI agents, MCP servers, LLM inference, vector databases, and more) ranked by composite momentum with week over week deltas.
-- **Technology radar** A polar view of every category split into rising, stable, and declining, with the 65 point breakout line marked.
-- **Language rankings** Every programming language ranked by the average momentum of its repositories.
-- **AI analyst** Each repository page carries a written breakdown (why it is growing, what it solves, who uses it, a verdict, and competitors), generated by a local Ollama model by default or a hosted LLM (Groq, OpenAI compatible, or Claude).
-- **Watchlist and push alerts** A private, browser local watchlist with optional Web Push notifications when a watched repository crosses your momentum threshold, even with the tab closed. Export it to a file, import it on another device, or share it as a link.
-- **Compare** Line up to four repositories side by side with a metrics table and an overlaid star growth chart.
-- **Full text search** Sub 50 millisecond search across every tracked repository, backed by PostgreSQL full text search.
-- **Command palette** Ctrl or Cmd + K for instant repository lookup, page navigation, recent repositories, and theme toggle.
-- **Score breakdown** Each repository page shows how many points stars, forks, contributors, commits and issues added to its momentum score.
-- **Rank movement** The Hottest Today leaderboard shows how far each repository moved since yesterday.
-- **README badge** `/badge/<id>` serves an SVG momentum badge; each repository page has a button that copies the Markdown.
-- **Hype vs substance signal** Every repository is flagged as backed by activity or star driven, so a spike that is real contributor and commit growth is distinguished from one that is only stars. Large star jumps with almost no fork, contributor or commit growth are flagged as an unusual star spike.
-- **Data freshness** Each view shows when its underlying data was last synced, so you always know how current the numbers are.
-- **Breakout calls** Each refresh flags small repositories (under 5k stars, under a year old) whose stars this week run at least 2.5× their own weekly average. Every call is dated and scored: it comes true if the repo reaches the weekly top 100 within 30 days, and the hit rate is public.
-- **Odds on every call** A small logistic model, refitted daily on every past breakout in the last 90 days, gives each call its odds of coming true and picks the likeliest, but only once its backtest beats guessing the average by at least 5%; until then every call shows the average odds. The Breakouts page publishes a backtest on held-out history and, as calls resolve, a live calibration chart (do 60% calls come true about 60% of the time?).
-- **Why it jumped** Each refresh finds days a fast-moving repo's stars jumped well above its usual day and looks for the trigger: a Hacker News story (free Algolia search, no key) or a release that day. The cause is marked on the star chart and shown on the front page.
-- **Lifecycle stage** Every repository is labelled breakout, emerging, established or fading from its last 7 days of stars against the 3 weeks before.
-- **Star check** For every repository gaining 300+ stars a week, its forks per star are compared with the typical fast grower's that week (about one fork per 9 stars). Bought stars rarely bring forks, so repos under two years old that fall far below the norm are flagged "stars without forks" in lists and never get a breakout call. Curated lists and older projects are skipped, since people star those as bookmarks. (GitHub stopped publishing stargazer lists in June 2026, which ruled out checking the accounts themselves.)
-- **After the hype** For every repo that had a 700+ star week, how long until its weekly stars halved, whether it still holds half its peak, and whether commits kept going, summarised per category on Trends and per repo on its page.
-- **What shipped** Recent GitHub releases for the top and watched repositories, marked on the star chart and listed on the repository page, This Week and the digest.
-- **Ask the data** Plain-English questions ("fastest-growing Rust databases", "new AI agents under 2k stars") become a validated filter over tracked repositories. A small Groq model reads the question, with a keyword parser as fallback and a daily cap; the model never writes SQL.
-- **For You** Enter a GitHub username to match rising repos to the topics and languages of that account's public stars ("like X, which you starred"), or follow categories and languages (stored in the browser). Lookups are cached and capped per day to protect the GitHub quota.
-- **Share images** Repository and category links unfurl with a generated image showing the star curve and momentum.
-- **Weekly digest** A scheduled recap of the week's breakouts and top movers, delivered to email (Resend), Slack, and Discord. Every channel is optional and independently configured.
+- **Today at a glance:** biggest gain today, the newest breakout call with its odds, the hottest category and the latest release, as four tiles with count-up numbers.
+- **Lead story:** the week's biggest mover with its star curve (releases and star spikes marked), the AI analysis and the cause of its latest spike.
+- **Hottest Today** with 7-day sparklines and rank movement since yesterday, runner-up stories, open breakout calls, what shipped, why they jumped, the category grid and the AI ecosystem feed.
+- **Ask the data:** plain-English questions ("fastest-growing Rust databases", "new AI agents under 2k stars") become a validated filter. A small model reads the question, with a keyword parser as fallback and a daily cap; the model never writes SQL.
 
-### App Sections
+### Breakout Calls
 
-- **Dashboard** A front page: an Ask box, the week's lead story with its star curve and AI write-up, the Hottest Today column, three runner-up stories, open breakout calls, what shipped, the category grid and the AI ecosystem feed.
-- **This Week** The weekly email as a page (same data): big story, breakouts, top movers, what shipped, new breakout calls, and categories heating up or cooling down.
-- **Breakouts** Every breakout call with its outcome and the running hit rate.
-- **Ask** Results for a plain-English question, with a read-back of how it was understood.
-- **For You** Followed categories and languages plus your watchlist.
-- **Trends** Category rankings with momentum and week over week change.
-- **Category detail** Momentum over time, radar status, and the top repositories in a category.
-- **Radar** Polar momentum chart plus rising, stable, and declining rails, a second view under the Trends tab.
-- **Languages** Momentum ranked by programming language, reached from the Repositories page.
-- **Repositories** The full index with sort, language filter, and pagination.
-- **Repository detail** A large star chart with release and milestone markers, velocity and momentum charts, the score breakdown, star check, recent releases, the AI analyst panel, and an action bar (watch, compare, GitHub) that stays on screen.
-- **Compare** Head to head analysis for two to four repositories, opened from a repository's "Compare with…" button.
-- **Watchlist** Your saved repositories plus background alerts.
-- **Search** The header Search button and Ctrl or Cmd + K open the command palette; `/search` has the full results page with a language filter.
+- Each refresh flags small repositories (under 5k stars, under a year old) whose stars this week run at least 2.5x their own weekly average. Each one becomes a dated call, at most 10 a week.
+- A call comes true if the repository reaches the weekly top 100 within 30 days. Hits, misses, the hit rate and how many days early each call came are public.
+- **Odds:** a small logistic model, retrained daily on every banked breakout, gives each call its odds and picks the likeliest, once its backtest clears the trust gate. The Breakouts page publishes the backtest and, as calls resolve, a live calibration chart.
 
-### Data Coverage
+### Why It Jumped
 
-- **Time series** Daily and weekly metrics per repository, star growth curves, momentum history.
-- **Context** Category classification, language, topics, license, and creation date.
-- **Aggregates** Category snapshots, language rollups, radar status.
-- **Discovery** New entrants, AI ecosystem feed, competitor suggestions.
-- **Feeds** RSS feed at `/rss.xml` (add `?category=<slug>` for one category) and per repository social preview images.
+- Each refresh finds days a fast mover's stars jumped (150+ stars and at least 3x its usual day) and looks for the trigger: a Hacker News story, a Lobsters story, a Bluesky post with 50+ likes, or a release that day.
+- Causes are marked on the star chart, listed on the repository page, shown under the lead story and collected in the weekly email.
+
+### Repository Pages
+
+- Star chart over 30 days, 90 days or the repository's whole life (from GitHub's weekly star history), with release, milestone and spike markers.
+- Velocity and momentum charts, the score breakdown, lifecycle stage (breakout, emerging, established, fading), the star check, recent releases, "after the hype" and the AI analysis.
+- A sticky action bar to watch, compare or open on GitHub, and a README badge to copy.
+
+### After the Hype
+
+- For every repository that had a 700+ star week: its best week, where it is now, when weekly stars halved and whether commits kept going.
+- Summarised per category on the Trends page ("halves in 4 days", "still holding", "still building") and shown per repository.
+
+### For You
+
+- Enter a GitHub username to see rising repositories matched to the topics and languages of that account's public stars, with "like X, which you starred".
+- Follow categories and languages, and keep a watchlist with its latest releases. All of it is stored in the browser; there are no accounts.
+
+### This Week and the Weekly Email
+
+- A recap page and a Monday email with the same content: the big story, breakouts, top movers, what shipped, calls that came true or ran out of time, and the week's explained spikes.
+
+### Reliability
+
+- Every refresh step runs on its own, so one failure never costs the others, and the run ends with a health check that emails the owner when something looks wrong.
+- Stored tables have retention limits sized for a 500 MB database, and each run prints the database size and its largest tables.
+
+### Look and Feel
+
+- An editorial design with a near-black Dusk theme and a warm-paper Paper theme, one ember accent, a bottom tab bar on phones and share images for repositories and categories.
+
+---
+
+## Data Source
+
+| Source | Type | API Key? | What It Provides |
+|--------|------|----------|-------------------|
+| [GitHub REST API](https://docs.github.com/rest) | REST | Token (no scopes) | Trending repositories via search, repository metadata, releases, contributor and commit activity, and weekly star history |
+| [Hacker News Search (Algolia)](https://hn.algolia.com/api) | REST | No | Stories linking to a repository or its homepage, for spike causes |
+| [Lobsters](https://lobste.rs) | JSON domain feeds | No | Stories linking to github.com or a repository's homepage |
+| [Bluesky AppView](https://docs.bsky.app) | `app.bsky.feed.searchPosts` | No | Posts about a repository within a date window, with likes |
+| [Groq](https://console.groq.com) | OpenAI-compatible API | Yes | AI write-ups (`gpt-oss-120b`) and question parsing (`gpt-oss-20b`) |
+
+Only public metadata is read. With the default local Ollama model, AI analysis runs on your machine; with a hosted provider, the repository metadata used for the write-up is sent to that provider.
 
 ---
 
 ## Tech Stack
 
-| Component | Technology | Details |
-|-----------|-----------|---------|
-| **Frontend** | Next.js 15, React 19 | App Router, server components, TanStack Query for data |
-| **Styling** | CSS design system | Editorial theme with a Dusk and Paper toggle; no UI framework |
-| **Charts** | Inline SVG | Dependency free sparklines, area, bar, and radar charts |
-| **Backend** | FastAPI, Python 3.12 | Async REST API, cursor based pagination |
-| **Database** | PostgreSQL, SQLAlchemy async | Repositories, metrics, categories, insights, push subscriptions |
-| **Cache and queue** | Redis | Response cache and the Celery message broker |
-| **Workers** | Celery | Scheduled ingestion, scoring, aggregation, and insight jobs |
-| **AI** | Ollama (default), Groq or OpenAI compatible, Claude (optional) | Local model by default; point `AI_PROVIDER` at a free hosted LLM (Groq) or Claude with one env var |
-| **Push** | Web Push, VAPID, pywebpush | Free browser push, no third party service |
-| **Notifications** | Resend email, Slack, Discord webhooks | Outbound digest and alert channels, each optional |
-| **Automation** | GitHub Actions | Serverless refresh, weekly digest, and keep warm on a schedule, no always on worker required |
-| **External data** | GitHub REST API | Authenticated ingestion at 5,000 requests per hour |
+| Layer | Technology | Details |
+|-------|-----------|---------|
+| **Frontend** | Next.js 15, React 19, TanStack Query | App Router, server-rendered pages, inline SVG charts, CSS design system |
+| **Backend** | FastAPI, Python 3.12 | Async REST API, SQLAlchemy async with raw SQL for the heavy queries |
+| **Database** | PostgreSQL | Repositories, daily and weekly metrics, categories, insights, calls, spikes, hype curves |
+| **Cache** | Redis | Response cache and daily caps for Ask, the stars radar and star history |
+| **Forecasting** | NumPy | Hand-written logistic regression, backtest and calibration; no ML library |
+| **AI** | Groq (`gpt-oss`), Ollama or any OpenAI-compatible endpoint | Selected with `AI_PROVIDER`; can be turned off |
+| **Notifications** | Resend email, Slack and Discord webhooks, Web Push | Weekly digest, health alerts and browser push, each optional |
+| **Scheduling** | GitHub Actions | Refresh every 6 hours, weekly digest, keep-warm, tests |
+| **Hosting** | Vercel (frontend), Render (API), Supabase (Postgres), Upstash (Redis) | `render.yaml` blueprint for the API |
+| **Local stack** | Docker Compose, Celery | Postgres, Redis, API, worker and beat for self-hosting |
+| **Testing** | pytest, Vitest | Pure logic and parsing tests on both sides |
 
 ---
 
 ## Prerequisites
 
-- **Docker Desktop** running (the backend stack runs in containers)
-- **Node.js 18+** for the frontend ([Download here](https://nodejs.org))
-- **A GitHub personal access token** for ingestion ([Create one here](https://github.com/settings/tokens); no scopes needed for public data)
-- **Ollama** for the AI analysis, optional ([Download here](https://ollama.com/download)); pull a model with `ollama pull qwen2.5:7b`
+- **Docker Desktop** for the local backend stack
+- **Node.js 18+** for the frontend ([download](https://nodejs.org))
+- **A GitHub personal access token** for ingestion ([create one](https://github.com/settings/tokens); no scopes needed)
+- **Optional:** [Ollama](https://ollama.com/download) for local AI write-ups (`ollama pull qwen2.5:7b`), or a Groq API key
 
 ---
 
-## Quick Start (3 Options)
-
-### Option 1: Full Stack with Docker (Recommended)
-
-Bring up Postgres, Redis, the API, and the workers, then load a first batch of data:
+## Quick Start
 
 ```bash
-# fill in your GitHub token in infra/.env.txt, then from the project root
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYTHONPATH=/app api python scripts/refresh.py --insights
-```
-
-Then start the frontend:
-
-```bash
-cd frontend
-npm install
-npm run dev   # http://localhost:2326
-```
-
-The API serves on `http://localhost:8010`, Postgres on `5433`, Redis on `6380` (remapped to avoid common local conflicts).
-
-### Option 2: Frontend Only (Against a Running Backend)
-
-If the backend is already running (locally or hosted), point the frontend at it and start it alone:
-
-```bash
-cd frontend
-echo NEXT_PUBLIC_API_URL=http://localhost:8010 > .env.local
-npm install
-npm run dev   # http://localhost:2326
-```
-
-### Option 3: Local Backend without Docker
-
-Run the backend directly with Python 3.12 (Python 3.14 lacks wheels for some dependencies):
-
-```bash
-cd backend
-py -3.12 -m venv .venv
-.venv\Scripts\activate          # macOS or Linux: source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8010
-```
-
-You still need a running Postgres and Redis, and the environment variables from `infra/.env.example`.
-
----
-
-## Detailed Setup Instructions
-
-### Windows
-
-```bash
-# 1. Clone the repository
 git clone https://github.com/HalcyonVector/FirstLight.git
 cd FirstLight
+cp infra/.env.example infra/.env.txt     # Windows: copy infra\.env.example infra\.env.txt
+# edit infra/.env.txt and set GITHUB_TOKEN (and AI settings if you want write-ups)
 
-# 2. Create your env file from the example and fill in GITHUB_TOKEN
-copy infra\.env.example infra\.env.txt
-#    (edit infra\.env.txt: set GITHUB_TOKEN, and optionally VAPID keys and AI settings)
-
-# 3. Start the backend stack
 docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-
-# 4. Load a first batch of data (add --insights to also run the AI analyst)
 docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYTHONPATH=/app api python scripts/refresh.py --insights
 
-# 5. Start the frontend
 cd frontend
 npm install
-npm run dev   # double-check http://localhost:2326
+npm run dev                              # http://localhost:2326
 ```
 
-### macOS / Linux
+The API serves on `http://localhost:8010`, Postgres on `5433` and Redis on `6380` (remapped to avoid common local conflicts). Momentum needs a second daily snapshot; to see it immediately, run `scripts/seed_demo.py` the same way as `refresh.py`.
+
+### Hosted Setup
+
+`docs/DEPLOY-FREE.md` walks through the hosted setup: Supabase for Postgres, Upstash for Redis, Render for the API (from `render.yaml`), Vercel for the frontend and GitHub Actions for the schedule. The workflows read these repository secrets: `DATABASE_URL`, `GH_PAT`, `LLM_API_KEY`, `RESEND_API_KEY` and `ALERT_EMAIL_TO`. On Render, `FRONTEND_URL` takes a comma-separated list of the site addresses allowed to call the API.
+
+### Tests
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/HalcyonVector/FirstLight.git
-cd FirstLight
-
-# 2. Create your env file and fill in GITHUB_TOKEN
-cp infra/.env.example infra/.env.txt
-
-# 3. Start the backend stack
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-
-# 4. Load a first batch of data
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYTHONPATH=/app api python scripts/refresh.py --insights
-
-# 5. Start the frontend
-cd frontend && npm install && npm run dev
-```
-
-### Enabling AI Insights (Ollama)
-
-```bash
-# on the host machine, not in Docker
-ollama pull qwen2.5:7b
-# the containers reach the host model automatically via host.docker.internal
-```
-
-### Enabling Browser Push (optional)
-
-```bash
-cd backend && python scripts/generate_vapid.py
-# paste the printed VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT into infra/.env.txt
-# then recreate: docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-```
-
-### Seeing Live Momentum Immediately (optional)
-
-Momentum measures change, so a fresh database reads zero until a second daily snapshot exists. To bootstrap it without waiting:
-
-```bash
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYTHONPATH=/app api python scripts/seed_demo.py
+cd backend && python -m pytest -q
+cd frontend && npm test
 ```
 
 ---
@@ -220,235 +164,135 @@ docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYT
 
 ```
 FirstLight/
-├── README.md                       # This file
-├── render.yaml                     # Render Blueprint for the API
-├── .github/
-│   └── workflows/                  # refresh (every 6h), weekly-digest, keep-warm, tests
-│
+├── README.md
+├── LICENSE
+├── render.yaml                       # Render blueprint for the API
+├── .github/workflows/                # refresh (every 6h), digest (Mondays), keepwarm, tests
 ├── docs/
-│   ├── ARCHITECTURE.md             # System design and PRD
-│   ├── DEPLOY-FREE.md              # Free hosting walkthrough (Vercel, Supabase, Render, Groq)
-│   └── NOTIFICATIONS.md            # Email, Slack, and Discord channel setup
-│
+│   ├── DEPLOY-FREE.md                # Hosted setup walkthrough
+│   ├── NOTIFICATIONS.md              # Email, Slack and Discord setup
+│   ├── ARCHITECTURE.md               # Original system design
+│   └── screenshots/
 ├── infra/
-│   ├── docker-compose.yml          # postgres, redis, api, worker, beat
-│   ├── schema.sql                  # Postgres schema and category seed data
-│   └── .env.example                # copy to infra/.env.txt and fill in
-│
+│   ├── docker-compose.yml            # postgres, redis, api, worker, beat
+│   ├── schema.sql                    # Base schema and category seed data
+│   └── .env.example
 ├── backend/
-│   ├── Dockerfile                  # Python 3.12 image
-│   ├── requirements.txt
-│   ├── pytest.ini                  # test configuration
-│   ├── conftest.py                 # test env bootstrap
 │   ├── scripts/
-│   │   ├── refresh.py              # manual ingest, score, aggregate, insights
-│   │   ├── seed_demo.py            # synthetic prior day snapshot for instant momentum
-│   │   ├── send_digest.py          # build and send the weekly digest
-│   │   └── generate_vapid.py       # generate a Web Push VAPID keypair
-│   ├── tests/
-│   │   ├── test_momentum.py        # momentum algorithm
-│   │   ├── test_github_service.py  # GitHub response parsing
-│   │   └── test_ai_service.py      # AI insight coercion
+│   │   ├── refresh.py                # The pipeline, step summaries and end-of-run health check
+│   │   ├── send_digest.py            # Weekly email
+│   │   ├── seed_demo.py              # Synthetic prior day for instant momentum
+│   │   └── generate_vapid.py         # Web Push keys
+│   ├── tests/                        # Momentum, forecasting, signals, sources, health, parsing
 │   └── app/
-│       ├── main.py                 # FastAPI app and router wiring
-│       ├── core/                   # config, database, cache
-│       ├── models/                 # SQLAlchemy models
-│       ├── schemas/                # Pydantic response models
-│       ├── api/v1/                 # dashboard, repositories, trends, search, push, analytics
-│       ├── services/               # github, ai (ollama or claude), trend, push
+│       ├── main.py
+│       ├── core/                     # config, database, cache, idempotent schema upgrades
+│       ├── api/v1/                   # dashboard, repositories, trends, search, signals, push, analytics
+│       ├── services/
+│       │   ├── forecast_service.py   # Spikes, odds model and backtest, hype curves, star check, radar
+│       │   ├── github_service.py     # GitHub REST client
+│       │   ├── hn_service.py         # Hacker News search
+│       │   ├── social_service.py     # Lobsters and Bluesky
+│       │   ├── health_service.py     # Run health check
+│       │   ├── digest_service.py     # Digest queries and the call record
+│       │   ├── ask_service.py        # Question to filter
+│       │   └── ai_service.py, trend_service.py, notify_service.py, push_service.py
 │       └── workers/
-│           └── ingestion.py        # Celery tasks and beat schedule
-│
-└── frontend/
-    ├── package.json
-    ├── next.config.ts
-    ├── tailwind.config.ts
-    ├── vitest.config.ts
-    ├── public/
-    │   └── sw.js                   # service worker for Web Push
-    └── src/
-        ├── app/                    # routes: /, this-week, trends, trends/[slug],
-        │                           #   radar, languages, repositories, repos/[id],
-        │                           #   compare, watchlist, search, rss.xml
-        ├── components/             # per page clients and shared components
-        ├── hooks/                  # useWatchlist, useSparklines
-        └── lib/                    # api, types, utils, chart, push, watchlist, recent
+│           ├── ingestion.py          # Ingest, score, aggregate, AI write-ups
+│           ├── enrichment.py         # Lifecycles, calls, releases, star check, retention
+│           └── explainers.py         # Spikes and causes, odds model, hype curves
+└── frontend/src/
+    ├── app/                          # /, this-week, trends, repos/[id], breakouts, ask, for-you, ...
+    ├── components/                   # Page clients and shared components
+    ├── hooks/
+    └── lib/                          # API client, types, chart markers, formatting
 ```
 
 ---
 
-## Data and Methodology
-
-### Source
-
-All data is fetched from the **[GitHub REST API](https://docs.github.com/rest)** using an authenticated personal access token, which allows 5,000 requests per hour. Only public repository metadata is read. With the default local Ollama model, AI analysis is generated on your machine and no repository content leaves it; if you switch to a hosted provider (Groq, OpenAI compatible, or Claude) the repository metadata used for the analysis is sent to that provider.
-
-### Categories Tracked
-
-| Category | Focus |
-|----------|-------|
-| **AI and agents** | AI agents, MCP servers, LLM frameworks, coding assistants |
-| **ML infrastructure** | Vector databases, inference, training, serving |
-| **Application** | Frontend frameworks, backend frameworks, databases |
-| **Platform** | Developer tools, infrastructure, security |
-| **Data** | Data engineering, observability, fintech |
-
-### Metrics Calculated
-
-- **Velocity** Stars gained per day and per week, forks gained, new contributors, commit activity
-- **Momentum** A 0 to 100 composite: star velocity 45 percent, fork velocity 20 percent, contributor velocity 20 percent, commit activity 10 percent, issue activity 5 percent, with a 1.2x bonus for repositories under 30 days old
-- **Category rollups** Momentum averaged across a category, plus rising, stable, or declining status
-- **Language rollups** Average momentum and total velocity per programming language
-
-### Ingestion Pipeline
+## Architecture
 
 ```
-GitHub REST API
-    ↓
-ingest_trending_repos  (every 6 hours) writes a daily metrics snapshot
-    ↓
-compute_trend_scores   (every 6 hours) computes daily gains and momentum, fires push alerts
-    ↓
-aggregate_snapshots    (daily) rolls repositories into category snapshots
-    ↓
-generate_ai_insights   (daily) writes AI analysis for the top repositories via Ollama
-    ↓
-FastAPI serves cached JSON, the Next.js dashboard renders it
+  GitHub Actions (every 6 hours)
+  ┌──────────────────────────────────────────────────────────────┐
+  │ refresh.py                                                     │
+  │  ingest trending repos ──► score momentum ──► category rollups │
+  │  odds model (daily) ──► lifecycles + breakout calls            │
+  │  releases ──► star check ──► spikes ──► spike causes           │
+  │  hype curves (daily) ──► retention ──► AI write-ups            │
+  │  storage report ──► health check ──► alert email if needed     │
+  └───────┬──────────────────────────┬─────────────────────────────┘
+          │                          │ HN, Lobsters, Bluesky, Groq
+          ▼                          ▼
+  ┌───────────────┐        ┌─────────────────────┐
+  │ PostgreSQL     │◄──────│ FastAPI on Render    │◄── Redis (cache, daily caps)
+  │ (Supabase)     │       │ /api/v1/...          │──► GitHub (star history, stars radar)
+  └───────────────┘        └──────────┬──────────┘
+                                      │ JSON
+                           ┌──────────▼──────────┐
+                           │ Next.js on Vercel    │
+                           └─────────────────────┘
+
+  Mondays: send_digest.py ──► Resend email
 ```
+
+How a breakout call is made and scored:
+
+1. **Measure:** each repository's stars this week are compared with its own weekly average over the three weeks before.
+2. **Filter:** small, young repositories at 2.5x their usual pace are candidates, unless they are already in the weekly top 100 or their stars arrive without forks.
+3. **Rank:** if the odds model has passed its backtest, candidates are ranked by its odds; otherwise by acceleration. At most 10 calls are made a week.
+4. **Score:** each refresh checks open calls against the weekly ranking. A call comes true on reaching the top 100 within 30 days and misses otherwise.
+5. **Learn:** every day the backtest rebuilds past breakouts from history, banks them, refits the model and decides again whether to trust it.
 
 ---
 
-## Deployment
-
-### Local
+## Testing
 
 ```bash
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-# frontend: cd frontend && npm run dev
+cd backend && python -m pytest -q      # 59 tests
+cd frontend && npm test                # 21 tests
 ```
 
-### Cloud
+**Backend (pytest):** the momentum algorithm, GitHub response parsing and AI output coercion; spike detection (a jump against the repository's own baseline, neighbouring days merged, steady repositories ignored); Hacker News, Lobsters and Bluesky matching, including the arXiv homepage case and `foo/bar` never matching `foo/barista`; the logistic model learning a planted signal, refusing thin history and falling back to the average on noise; calibration bins and Brier scores; hype curves and their per-category summary; the star check verdicts built from live numbers; the stars radar; question parsing for Ask; the health check; and the lifetime star series.
 
-The stack is designed for managed hosting:
+**Frontend (Vitest):** chart geometry, formatting, and release, milestone and spike markers.
 
-| Piece | Suggested host | Notes |
-|-------|----------------|-------|
-| **Frontend** | Vercel | Provides HTTPS, which Web Push requires |
-| **Database** | Supabase or Neon | Managed Postgres |
-| **Cache** | Upstash | Managed Redis |
-| **API** | Render (`render.yaml` blueprint), Fly.io, or a small VPS | The included `render.yaml` deploys the API in one click |
-| **Scheduler** | GitHub Actions | Replaces the always on `beat` container, so no worker needs to stay running (see below) |
-| **AI** | `AI_PROVIDER=groq` with a free Groq API key, any OpenAI compatible endpoint, or `AI_PROVIDER=off` | Groq's free tier runs a hosted 120B model (gpt-oss) with no card; free hosts cannot run a local model |
-
-Set `NEXT_PUBLIC_API_URL` on the frontend to the hosted API, and replace the local Postgres and Redis URLs with the managed ones through environment variables. A full free hosting walkthrough lives in `docs/DEPLOY-FREE.md`, and channel setup in `docs/NOTIFICATIONS.md`.
-
-### Scheduled Jobs
-
-Two ways to keep the data fresh, pick one:
-
-- **Docker `beat` container (self hosted)** triggers ingestion every 6 hours, scoring 30 minutes later, and aggregation plus AI insights daily. As long as the containers keep running, the data refreshes on its own.
-- **GitHub Actions (serverless, free on public repos)** runs the same pipeline without any always on process. The included workflows are `refresh` (full pipeline every 6 hours), `weekly-digest` (Mondays 09:00 UTC), `keep-warm` (pings the free Render API every 10 minutes so it does not cold start), and `tests` (on push). Add the repository secrets each workflow reads, and it runs itself.
+The pipeline steps and endpoints were also run against a local Postgres seeded with 90 days of synthetic history, and pages were checked in a browser on phone and desktop widths in both themes.
 
 ---
 
-## Available Scripts
+## Honest Limitations
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| **Start the stack** | `docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d` | Bring up Postgres, Redis, API, worker, beat |
-| **Load and score data** | `... exec -e PYTHONPATH=/app api python scripts/refresh.py --insights` | Ingest, compute scores, aggregate, generate insights |
-| **Seed live momentum** | `... exec -e PYTHONPATH=/app api python scripts/seed_demo.py` | Insert a synthetic prior day snapshot so momentum shows immediately |
-| **Generate VAPID keys** | `cd backend && python scripts/generate_vapid.py` | Create a keypair for browser push |
-| **Send weekly digest** | `cd backend && python scripts/send_digest.py` | Build and send the digest to configured channels (email, Slack, Discord) |
-| **Backend tests** | `... exec -e PYTHONPATH=/app api python -m pytest -q` | Run the pytest suite |
-| **Frontend tests** | `cd frontend && npm test` | Run the vitest suite |
-| **Frontend build** | `cd frontend && npm run build` | Production build |
-
----
-
-## Troubleshooting
-
-### Issue: `Bind for 0.0.0.0:PORT failed: port is already allocated`
-
-**Solution:** Another app owns that port. Postgres, Redis, and the API are already remapped to 5433, 6380, and 8010. Find the culprit with `netstat -ano | findstr :PORT`, or change the host port in `infra/docker-compose.yml`.
-
-### Issue: `The "GITHUB_TOKEN" variable is not set. Defaulting to a blank string.`
-
-**Solution:** Docker Compose is not reading your env file. Always pass it explicitly:
-
-```bash
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-```
-
-### Issue: `ModuleNotFoundError: No module named 'app'` when running a script
-
-**Solution:** Set the path so the package resolves:
-
-```bash
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml exec -e PYTHONPATH=/app api python scripts/refresh.py
-```
-
-### Issue: `Failed building wheel for pydantic-core` (or asyncpg, orjson)
-
-**Solution:** You are likely on Python 3.14, which lacks prebuilt wheels. The backend runs in Docker on Python 3.12, so use Docker, or create a local venv with `py -3.12`.
-
-### Issue: PowerShell `curl` prompts about script execution
-
-**Solution:** In PowerShell, `curl` is an alias for `Invoke-WebRequest`. Use the real client instead:
-
-```bash
-curl.exe http://localhost:8010/health
-```
-
-### Issue: AI insights do not generate
-
-**Solution:** Confirm Ollama is running and the model is pulled. From the host, `curl.exe http://localhost:11434/api/tags` should list the model. Viewing existing insights does not need Ollama; only generating new ones does.
-
-### Issue: Momentum and leaderboards read zero on a fresh database
-
-**Solution:** Momentum measures change and needs a second daily snapshot. Wait for the next 6 hour cycle, or run `scripts/seed_demo.py` to bootstrap it immediately.
-
-### Issue: Postgres exits on first start
-
-**Solution:** A half initialized volume from an aborted run. Reset it (this wipes the database):
-
-```bash
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml down -v
-docker compose --env-file infra/.env.txt -f infra/docker-compose.yml up -d
-```
+- **Daily metrics only go back 90 days**, to fit the database quota. Longer history comes from GitHub's weekly star history for charts and from the banked breakout samples for the odds model.
+- **Coverage comes from GitHub search**, not GitHub's own Trending page, so a repository that never shows up in the searched topics and languages is not tracked.
+- **Many spikes have no found cause.** X, YouTube, newsletters and private communities have no open search API, so a spike with no Hacker News, Lobsters, Bluesky or release trigger is shown without one.
+- **The star check is a heuristic.** Few forks per star can also mean a list, a template or a tool people use without forking. Bought stars that come with bought forks would pass.
+- **The odds model has little data.** It trains on about 80 breakouts so far and often sits out under its own trust gate. Its odds mean "breakouts like this one", not a certainty about this one.
+- **The breakout bar is a choice.** "Weekly top 100 within 30 days" is one definition of a breakout; a different bar would change the hit rate.
+- **AI write-ups can be wrong or stale**, for example quoting star counts from when they were written.
+- **Lifetime star charts can read slightly low early on**, because GitHub's weekly history does not include stars that were later removed.
+- **Render's free tier sleeps when idle.** A keep-warm workflow pings it, but the first request after an outage can still be slow.
 
 ---
 
-## Future Enhancements
+## Suggested Future Features
 
-- [x] Free tier hosted LLM provider so cloud AI stays free (Groq / OpenAI compatible)
-- [x] Weekly email digest (email, Slack, and Discord)
-- [ ] User accounts with server side watchlists and a personalized feed
-- [ ] Progressive web app install and SEO (sitemap, robots, social images)
-- [ ] Similar repositories on detail pages
-- [ ] Contributor growth charts
-- [ ] Real time updates over websockets
-- [ ] Historical backfill so momentum is live from day one
+- **A weekly ranking archive** stored from now on, so breakouts older than the 90-day window can be labelled and the odds model can learn from more history.
+- **More spike sources** as open, keyless APIs appear, for example newsletter archives.
+- **Contributor and issue growth charts** to separate projects that are building from projects that are only being starred.
+- **Similar repositories by embeddings** instead of shared topics.
+- **A public JSON feed of breakout calls** so others can check the track record independently.
 
 ---
 
 ## Author
 
-Sagnik
+**Sagnik**
+
 GitHub: [@HalcyonVector](https://github.com/HalcyonVector)
 
 ---
 
-## Support
+## License
 
-Found a bug or have a feature request? Open an issue on the repository.
-
----
-
-## License and Attribution
-
-**Data Attribution:** Repository data is fetched from the [GitHub REST API](https://docs.github.com/rest) under GitHub's terms of service. With the default local model, AI analysis runs on your machine; if you enable a hosted provider, repository metadata is sent to that provider for analysis.
-
-**Project License:** Released under the [MIT License](LICENSE).
-
----
+MIT License. See [LICENSE](./LICENSE). Free to use, modify, and distribute, with no warranty.

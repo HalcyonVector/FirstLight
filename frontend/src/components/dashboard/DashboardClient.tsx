@@ -9,7 +9,7 @@ import { cn, formatStat, formatDelta, relativeTime } from "@/lib/utils";
 import { WatchButton } from "@/components/shared/WatchButton";
 import { AreaChart, shortDate } from "@/components/shared/Charts";
 import { AskBox, LifecycleChip, OddsChip, StarFlag, useStarChecks } from "@/components/shared/Signals";
-import { releaseMarkers, spikeCauseLine, spikeMarkers } from "@/lib/markers";
+import { CAUSE_LABEL, releaseMarkers, spikeCauseLine, spikeMarkers } from "@/lib/markers";
 import { Sparkline } from "@/components/shared/Sparkline";
 import { CountUp } from "@/components/shared/CountUp";
 import { useSparklines } from "@/hooks/useSparklines";
@@ -174,7 +174,7 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
       {why && (
         <a className="whyline" href={whyLink ?? `/repos/${repo.id}`} target={whyLink ? "_blank" : undefined} rel="noopener noreferrer">
           <b>Why:</b> {spikeCauseLine(why)}
-          {why.causes[0]?.kind === "hn" && <> &ldquo;{why.causes[0].title}&rdquo;</>} · +{formatStat(why.gain)} stars on{" "}
+          {why.causes[0]?.kind !== "release" && <> &ldquo;{why.causes[0].title}&rdquo;</>} · +{formatStat(why.gain)} stars on{" "}
           {shortDate(why.date)}
         </a>
       )}
@@ -293,7 +293,11 @@ function WhyTheyJumped() {
               <div className="jg">+{formatStat(s.gain)}</div>
               <div className="jn">{s.full_name}</div>
               <div className="jc">
-                <span className={`ck ${c.kind}`}>{c.kind === "hn" ? `HN · ${formatStat(c.points ?? 0)} pts` : "Release"}</span>{" "}
+                <span className={`ck ${c.kind}`}>
+                  {c.kind === "release"
+                    ? "Release"
+                    : `${CAUSE_LABEL[c.kind]} · ${formatStat(c.points ?? 0)} ${c.kind === "bluesky" ? "likes" : "pts"}`}
+                </span>{" "}
                 {c.title}
               </div>
               <div className="jd">
