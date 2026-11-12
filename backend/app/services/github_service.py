@@ -69,8 +69,10 @@ class GitHubService:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=settings.GITHUB_API_BASE,
+                # An empty "Bearer " header makes GitHub answer 401, so without a
+                # token fall back to anonymous calls (60 an hour) instead of failing.
                 headers={
-                    "Authorization": f"Bearer {settings.GITHUB_TOKEN}",
+                    **({"Authorization": f"Bearer {settings.GITHUB_TOKEN}"} if settings.GITHUB_TOKEN else {}),
                     "Accept": "application/vnd.github+json",
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
