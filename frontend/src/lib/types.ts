@@ -52,7 +52,7 @@ export interface RepoBreakoutCall {
 }
 
 export interface SpikeCause {
-  kind: "hn" | "release";
+  kind: "hn" | "lobsters" | "bluesky" | "release";
   title: string;
   url: string | null;
   at: string | null;
@@ -351,10 +351,31 @@ export interface ShippedRelease extends Release {
   full_name: string;
 }
 
+export interface ResolvedCall {
+  id: number;
+  full_name: string;
+  called_on: string;
+  stars_at_call: number;
+  status: "hit" | "miss";
+  hit_on: string | null;
+  best_rank: number | null;
+  lead_days: number | null;
+  prob: number | null;
+}
+
 export interface DigestData {
   breakouts: DigestRepo[];
   movers: DigestRepo[];
   shipped: ShippedRelease[];
+  /** Calls that came true or ran out of time in the last 7 days. */
+  resolved?: ResolvedCall[];
+  /** The week's biggest explained star spikes. */
+  spikes?: ExplainedSpike[];
+}
+
+export interface StarHistory {
+  weeks: { week: string; stars: number }[];
+  complete: boolean;
 }
 
 // ─── Ask ─────────────────────────────────────────────────────────────────────

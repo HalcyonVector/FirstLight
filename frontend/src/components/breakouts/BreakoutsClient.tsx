@@ -209,7 +209,8 @@ function OddsReport({ data }: { data: CallsResponse }) {
             <p className="oddsnote">
               That isn&apos;t good enough to trust yet, so the model sits out: every call shows the average odds
               ({m.base_rate}%) and calls go to the sharpest acceleration, as before. It retrains daily on the
-              newest history and takes over once it beats the average by at least 5%.
+              newest history and takes over once it beats the average by at least 5% on a held-out set
+              with at least 8 breakouts that came true, so a lucky streak can&apos;t switch it on.
             </p>
           )}
           {bt && bt.bins.length > 0 && (
