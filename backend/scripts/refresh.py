@@ -96,7 +96,11 @@ async def _alert(issues: list[str]) -> None:
 async def main(with_insights: bool) -> None:
     try:
         async with AsyncSessionLocal() as session:
-            await ensure_schema(session)
+            still_open = await ensure_schema(session)
+        print("→ row-level security: " + (
+            "on for every public table" if still_open == 0
+            else "could not be checked" if still_open < 0
+            else f"{still_open} public table(s) still open"))
         print("→ ingesting trending repos…")
         await _ingest_trending_repos()
         print("→ computing trend scores…")

@@ -120,13 +120,59 @@ DDL = [
     "DROP INDEX IF EXISTS idx_daily_repo_date",
 ]
 
+# Supabase serves every public table over its REST API to anyone holding the
+# project's anon key, which ships in the dashboard and is not a secret. Turning
+# on row-level security with no policies shuts that door. The backend is
+# unaffected: it connects as the tables' owner, and owners bypass RLS. Only
+# tables this role owns are touched. Runs after DDL so new tables are covered.
+LOCK_DOWN = """
+    DO $$
+    DECLARE t record;
+    BEGIN
+        FOR t IN
+            SELECT c.relname FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+              AND NOT c.relrowsecurity
+              AND pg_get_userbyid(c.relowner) = current_user
+        LOOP
+            EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.relname);
+        END LOOP;
+    END $$
+"""
 
-async def ensure_schema(session: AsyncSession) -> None:
+OPEN_TABLES = """
+    SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity
+"""
+
+
+async def ensure_schema(session: AsyncSession) -> int:
+    """Apply DDL, then lock down public tables. Returns tables still without RLS (-1 if unknown)."""
     # Give up quickly rather than queue behind a long pipeline transaction.
     await session.execute(text("SET LOCAL lock_timeout = '5s'"))
     for stmt in DDL:
         await session.execute(text(stmt))
     await session.commit()
+    return await lock_down_public_tables(session)
+
+
+async def lock_down_public_tables(session: AsyncSession) -> int:
+    """Enable RLS on public tables; returns how many are still open. Never raises."""
+    try:
+        await session.execute(text("SET LOCAL lock_timeout = '5s'"))
+        await session.execute(text(LOCK_DOWN))
+        await session.commit()
+        still_open = int((await session.execute(text(OPEN_TABLES))).scalar() or 0)
+    except Exception as exc:  # noqa: BLE001 -- must not stop the pipeline
+        await session.rollback()
+        logger.warning("Could not enable row-level security: %s", exc)
+        return -1
+    if still_open:
+        logger.warning("%d public table(s) still have row-level security off", still_open)
+    else:
+        logger.info("Row-level security is on for every public table")
+    return still_open
 
 
 async def storage_report(session: AsyncSession) -> tuple[int, list[tuple[str, int]]]:
