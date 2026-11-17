@@ -648,6 +648,11 @@ html[data-theme="paper"] {
 .lspark { display:inline-flex; align-items:center; opacity:.9; }
 .story .smeta { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .leadchart.top { margin:10px 0 18px; border-top:none; padding-top:0; }
+/* Same shape as the 560x180 chart, so the lead story keeps its place while the chart loads. */
+.leadchart.chartwait { aspect-ratio:560 / 180; background:linear-gradient(to top, var(--rule), transparent 70%);
+  opacity:.35; border-radius:4px; animation:chartwait 1.4s ease-in-out infinite alternate; }
+@keyframes chartwait { from { opacity:.15; } to { opacity:.4; } }
+@media (prefers-reduced-motion: reduce) { .leadchart.chartwait { animation:none; } }
 
 /* repo page title with the owner's avatar */
 .rtitle { display:flex; align-items:center; gap:14px; }

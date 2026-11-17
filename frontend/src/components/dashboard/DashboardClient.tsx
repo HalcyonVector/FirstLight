@@ -138,7 +138,7 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const { data: metrics } = useQuery({
+  const { data: metrics, isPending: chartPending } = useQuery({
     queryKey: ["repo-metrics", repo.id, "30d"],
     queryFn: () => getRepositoryMetrics(repo.id, "30d"),
     staleTime: 5 * 60_000,
@@ -154,7 +154,10 @@ function LeadStory({ repo, hasVelocity }: { repo: RepoCard; hasVelocity: boolean
       <div className="kicker" style={{ marginTop: 26 }}>
         Lead story · {hasVelocity ? "this week's biggest mover" : "most starred"}
       </div>
-      {daily.length > 2 && (
+      {/* Hold the chart's space while it loads, so the headline doesn't jump down when it arrives. */}
+      {chartPending ? (
+        <div className="leadchart top chartwait" aria-busy="true" />
+      ) : daily.length > 2 && (
         <div className="leadchart top">
           <AreaChart
             values={daily.map((d) => d.stars_total)}
@@ -212,7 +215,7 @@ function Story({ repo, rank, spark }: { repo: RepoCard; rank: number; spark?: nu
         <span>
           <b>{formatDelta(repo.stars_gained_week)}</b> this week · momentum {Math.round(repo.momentum_score)}
         </span>
-        {spark && <Sparkline values={spark} width={70} height={22} color="var(--gain)" />}
+        <Sparkline values={spark ?? []} width={70} height={22} color="var(--gain)" />
       </div>
     </Link>
   );
@@ -344,11 +347,9 @@ function LeaderEntry({
         </div>
       </div>
       <div className="rt rtwatch">
-        {spark && (
-          <span className="lspark">
-            <Sparkline values={spark} width={56} height={20} color="var(--gain)" />
-          </span>
-        )}
+        <span className="lspark">
+          <Sparkline values={spark ?? []} width={56} height={20} color="var(--gain)" />
+        </span>
         <div>
           <div className="gv" style={repo.stars_gained_today ? undefined : { color: "var(--dim2)" }}>
             {repo.stars_gained_today ? formatDelta(repo.stars_gained_today) : "—"}
