@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 import { LogoMark } from "@/components/shared/Logo";
+import { SiteFooter } from "@/components/layout/SiteFooter";
 
 // 24px line icons for the phone tab bar.
 const ICONS: Record<string, React.ReactNode> = {
@@ -129,9 +130,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="wrap" style={{ paddingBottom: 90, position: "relative", zIndex: 2 }}>
+      <main className="wrap" style={{ paddingBottom: 56, position: "relative", zIndex: 2 }}>
         {children}
       </main>
+
+      <SiteFooter />
 
       <nav className="bnav" aria-label="Sections">
         {NAV.map((n) => (
