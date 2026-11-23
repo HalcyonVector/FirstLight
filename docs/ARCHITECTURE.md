@@ -569,7 +569,7 @@ NEXT_PUBLIC_API_URL=https://api.yourapp.com
 ```
 
 ### Rollout sequence
-1. Deploy PostgreSQL (Supabase) → run schema.sql
+1. Deploy PostgreSQL (Supabase); the first refresh creates the schema (backend/app/core/base_schema.sql)
 2. Deploy backend to Railway → test /health endpoint
 3. Trigger first manual ingestion run → verify data in DB
 4. Deploy frontend to Vercel → connect to backend URL

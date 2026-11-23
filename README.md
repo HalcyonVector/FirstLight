@@ -175,7 +175,6 @@ FirstLight/
 │   └── screenshots/
 ├── infra/
 │   ├── docker-compose.yml            # postgres, redis, api, worker, beat
-│   ├── schema.sql                    # Base schema and category seed data
 │   └── .env.example
 ├── backend/
 │   ├── scripts/
@@ -186,7 +185,7 @@ FirstLight/
 │   ├── tests/                        # Momentum, forecasting, signals, sources, health, parsing
 │   └── app/
 │       ├── main.py
-│       ├── core/                     # config, database, cache, idempotent schema upgrades
+│       ├── core/                     # config, database, cache, base schema and idempotent upgrades
 │       ├── api/v1/                   # dashboard, repositories, trends, search, signals, push, analytics
 │       ├── services/
 │       │   ├── forecast_service.py   # Spikes, odds model and backtest, hype curves, star check, radar

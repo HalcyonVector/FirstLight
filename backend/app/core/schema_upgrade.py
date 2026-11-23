@@ -1,12 +1,15 @@
 """
-Idempotent schema additions on top of infra/schema.sql.
+Idempotent schema additions on top of base_schema.sql.
 
 The refresh pipeline applies these before every run (and the API tries once at
 startup), so new tables appear on the hosted database without a manual
-migration step. Every statement is safe to run repeatedly.
+migration step. Every statement is safe to run repeatedly. On an empty
+database the base schema is applied first, so a new project needs no SQL
+pasted by hand.
 """
 
 import logging
+from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,8 +150,30 @@ OPEN_TABLES = """
 """
 
 
+BASE_SCHEMA = Path(__file__).with_name("base_schema.sql")
+
+
+async def bootstrap_if_empty(session: AsyncSession) -> bool:
+    """Create the base tables and seed categories on a database that has none. True if it did."""
+    # The API's startup and a refresh can both arrive at an empty database;
+    # the lock makes the second wait, then find the tables already there.
+    await session.execute(text("SELECT pg_advisory_xact_lock(727001)"))
+    exists =(await session.execute(text("SELECT to_regclass('public.repositories')"))).scalar()
+    if exists is not None:
+        return False
+    logger.warning("Empty database: applying %s", BASE_SCHEMA.name)
+    # A multi-statement script (with $$ function bodies) needs the driver's
+    # simple-query path; SQLAlchemy's text() runs one prepared statement.
+    conn = await session.connection()
+    raw = await conn.get_raw_connection()
+    await raw.driver_connection.execute(BASE_SCHEMA.read_text(encoding="utf-8"))
+    await session.commit()
+    return True
+
+
 async def ensure_schema(session: AsyncSession) -> int:
     """Apply DDL, then lock down public tables. Returns tables still without RLS (-1 if unknown)."""
+    await bootstrap_if_empty(session)
     # Give up quickly rather than queue behind a long pipeline transaction.
     await session.execute(text("SET LOCAL lock_timeout = '5s'"))
     for stmt in DDL:

@@ -1,5 +1,6 @@
--- FirstLight — PostgreSQL Schema
--- Run: psql $DATABASE_URL -f schema.sql
+-- FirstLight: base PostgreSQL schema and category seed.
+-- Applied automatically to an empty database by app/core/schema_upgrade.py
+-- (or by hand: psql $DATABASE_URL -f base_schema.sql).
 
 -- ============================================================
 -- Extensions
