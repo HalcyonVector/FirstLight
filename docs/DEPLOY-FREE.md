@@ -34,7 +34,7 @@ Everything below wires the hosted services to this repo.
 ## 1. Database — Supabase
 
 1. Create an account at https://supabase.com and click **New project**. Pick a region near you and set a database password (save it).
-2. When it's ready, open **SQL Editor**, paste the contents of `infra/schema.sql`, and **Run**. This creates the tables and seeds the 15 categories.
+2. Nothing to run in the SQL Editor: on an empty database the first refresh (or the API's first start) applies `backend/app/core/base_schema.sql`, which creates the tables and seeds the 15 categories, then turns on row-level security.
 3. Get the connection string: **Project Settings → Database → Connection string → URI**. It looks like:
    `postgresql://postgres.xxxx:[PASSWORD]@aws-0-<region>.pooler.supabase.com:6543/postgres`
 4. Two edits to that string before you use it anywhere:
